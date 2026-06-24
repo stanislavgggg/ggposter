@@ -58,6 +58,7 @@ offer:
 # --- Комплаенс (ЖЁСТКИЕ правила, прокидываются в промпт и в self-check) ---
 compliance:
   min_age: 18
+  append_to_post: false                      # false -> НЕ добавлять 18+/RG/T&C строку в текст поста
   must_include:
     - "Aiškus 18+ žymėjimas"                 # 18+
     - "Atsakingo žaidimo priminimas"          # responsible gambling
