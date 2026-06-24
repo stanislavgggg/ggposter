@@ -27,6 +27,21 @@ local_context:
     - "Basketball is the #1 sport — football posts should earn attention with the stat/story, not assume football fandom."
     - "Avoid over-formal Lithuanian; the channel reads casual."
 
+# --- Выходы конвейера (Слой 2/3) ---
+outputs: [telegram]            # для запуска email-ветки: [telegram, email]
+email:
+  audiences: [warm]            # warm (свой список -> сразу к офферу) | cold (боль -> оффер)
+  warm:
+    list_id: "${LT_MC_LIST_ID}"
+    segment_id: "${LT_MC_WARM_SEGMENT}"
+    from_name: "${LT_MC_FROM_NAME}"
+    reply_to: "${LT_MC_REPLY_TO}"
+  cold:
+    list_id: "${LT_MC_LIST_ID}"
+    segment_id: "${LT_MC_COLD_SEGMENT}"
+    from_name: "${LT_MC_FROM_NAME}"
+    reply_to: "${LT_MC_REPLY_TO}"
+
 # --- Telegram ---
 telegram:
   public_channel_id: "${LT_CHANNEL_ID}"     # @канал или -100... id публичного канала

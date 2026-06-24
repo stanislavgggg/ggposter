@@ -21,23 +21,29 @@ import time
 
 from .store import get_store
 from .airtable import Airtable
-from .publish import publish_draft
+from .deliver import deliver
 
 
 def _preview_fields(draft):
     flag = "OK ✅" if draft.get("compliance_ok") else f"⚠️ {draft.get('compliance_notes','')}"
-    return {
+    f = {
         "Draft ID": draft["draft_id"],
+        "Kind": draft.get("kind", "telegram"),
         "Match": draft["match_id"],
         "GEO": draft["geo"],
         "Channel": draft.get("channel_id", ""),
         "Compliance": flag,
-        "Post A": draft.get("post_a", ""),
-        "Post B": draft.get("post_b", ""),
         "Hook rationale": draft.get("hook_rationale", ""),
         "Status": "Pending",
         "Processed": False,
     }
+    if draft.get("kind") == "email":
+        f.update({"Subject A": draft.get("subject_a", ""), "Subject B": draft.get("subject_b", ""),
+                  "Preview text": draft.get("preview_text", ""), "Audience": draft.get("audience", "warm"),
+                  "Post A": draft.get("body_html", "")})       # тело в Post A для ревью
+    else:
+        f.update({"Post A": draft.get("post_a", ""), "Post B": draft.get("post_b", "")})
+    return f
 
 
 class AirtableBridge:
@@ -62,7 +68,6 @@ class AirtableBridge:
             status = f.get("Status")
 
             if status == "Approved":
-                # прокинуть выбор/правку менеджера в стор
                 updates = {}
                 if f.get("Variant"):
                     updates["chosen_variant"] = f["Variant"]
@@ -70,12 +75,14 @@ class AirtableBridge:
                     updates["edited_text"] = f["Edited text"]
                 if updates:
                     self.store.update_draft(draft_id, **updates)
-                publish_draft(draft_id)                       # постит в канал
+                deliver(draft_id)                              # telegram-пост или email
                 pub = self.store.get_draft(draft_id)
-                self.at.update(rec["id"], {
-                    "Processed": True,
-                    "Published link": f"https://t.me/{str(pub.get('channel_id','')).lstrip('@')}",
-                })
+                writeback = {"Processed": True}
+                if pub.get("kind") != "email":
+                    writeback["Published link"] = f"https://t.me/{str(pub.get('channel_id','')).lstrip('@')}"
+                else:
+                    writeback["Published link"] = ""           # email: см. ESP/Mailchimp
+                self.at.update(rec["id"], writeback)
             elif status == "Rejected":
                 self.store.update_draft(draft_id, status="rejected")
                 self.at.update(rec["id"], {"Processed": True})

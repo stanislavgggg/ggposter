@@ -1,16 +1,17 @@
 """
-Воркер (Railway cron). Один проход петли производства, МУЛЬТИ-ГЕО:
+Воркер (Railway cron). Один проход петли производства, МУЛЬТИ-ГЕО + МУЛЬТИ-ВЫХОД:
 
-  ingest (раз)  ->  для каждого GEO: generate (Слой 2)  ->  драфты в очередь аппрува.
+  ingest матчей + ingest_news (инфоповоды) + enrich (xG)
+    -> для каждого GEO: generate (telegram и/или email по geo.outputs)
+    -> драфты в очередь аппрува.
 
-События общие для всех гео (один матч), а тексты — свои на каждый гео
-(транскреация + локальный угол + выученные хуки). Публикацию делает always-on bot.py.
-
-GEO берутся из env GEOS="lt,lv,es" (через запятую) либо из PILOT_GEO (один).
+События общие, тексты — свои на гео/выход. Доставку делает always-on review-процесс.
+GEO из env GEOS="lt,lv,es" либо PILOT_GEO.
 """
 import os
 
-from .ingest import ingest
+from .ingest import ingest, ingest_news
+from .enrich import enrich
 from .generate import generate_for_events
 
 
@@ -22,13 +23,19 @@ def _geos():
 
 
 def run_once():
-    events = ingest()
+    matches = ingest()
+    news = ingest_news()
+    enrich(matches)                       # опционально (ENRICH=true)
+    events = matches + news
     total = 0
     for geo in _geos():
         drafts = generate_for_events(events, geo_name=geo)
         total += len(drafts)
-        print(f"[orchestrate] geo={geo} events={len(events)} new_drafts={len(drafts)}")
-    print(f"[orchestrate] DONE events={len(events)} total_new_drafts={total}")
+        kinds = {}
+        for d in drafts:
+            kinds[d["kind"]] = kinds.get(d["kind"], 0) + 1
+        print(f"[orchestrate] geo={geo} events={len(events)} drafts={len(drafts)} {kinds}")
+    print(f"[orchestrate] DONE matches={len(matches)} news={len(news)} total_drafts={total}")
     return total
 
 

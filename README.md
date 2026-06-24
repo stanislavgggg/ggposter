@@ -1,113 +1,111 @@
-# Telegram-автопостинг по гео (iGaming) — конвейер
+# iGaming контент-конвейер (Telegram + Email) — по изначальному плану
 
 Контент-менеджер перестаёт быть **автором** и становится **редактором-аппрувером**.
-Пилот: **футбол (ЧМ-2026) → Литва (LT) → Telegram**. Масштаб = копирование конфига.
+Один конвейер, два выхода: **авто-постинг в Telegram** и **email-конвейер конверсии**.
+Пилот: футбол (ЧМ-2026) → Литва (LT). Масштаб = копирование конфига.
 
 ```
-Слой 1: событие (Apify→стор)  ─┐
-Слой 2: Claude генерит пост    ─┤→ очередь аппрува → менеджер ✅ → Слой 3: автопост в канал
-Слой 4: GEO/Sport-конфиг       ─┘                                         │
-                                                                          ▼
-              петля обучения: метрики по subid (FTD/CTR) → лучшие хуки обратно в промпт
+Слой 1: матчи (Apify) + новости (GDELT) + xG-enrich ─┐
+Слой 2: Claude — посты (транскреация) И email          ─┤→ очередь аппрува → редактор ✅ → Слой 3
+        (HOOK→AGITATE→PROVE→OFFER→CTA)                 ─┘                                  │
+Слой 4: GEO/Sport/News-конфиг                                          ┌────────────────────┤
+                                                                       ▼                    ▼
+                                                          Telegram-канал           ESP (Mailchimp)
+                                                                       └──────────┬─────────┘
+                              петля обучения: метрики по subid (FTD/open/CTR) → лучшие хуки/сабжекты → в промпт
 ```
+
+## Полнота по изначальному плану
+
+| План | Статус |
+|---|---|
+| Слой 1: Sofascore/FlashScore — матчи, события, статы | ✅ реальные акторы + field_map |
+| Слой 1: акторы под ЧМ-2026 | ✅ openligadb (покрывает WC) |
+| Слой 1: **xG (FBref/Understat)**, травмы (Transfermarkt) | ✅ `enrich.py` (Understat xG; ENRICH=true) |
+| Слой 1: **новостной MCP-актор (Reuters/AP/BBC/GDELT, 65+ яз.)** | ✅ `cloud9_ai/gdelt-news-scraper`, type=news |
+| Слой 1: событийный триггер (не daily-крон) | ✅ Apify webhook → `src.webhook` (+ крон как fallback) |
+| Слой 2: посты — транскреация LT/LV/ES | ✅ мульти-гео |
+| Слой 2: **email HOOK→AGITATE→PROVE→OFFER→CTA** | ✅ `email_generation.md` + `generate_email` |
+| Слой 2: тёплый/холодный трафик | ✅ `audience: warm/cold` |
+| Слой 2: прелендер→регистрация→FTD, A/B сабжекты | ✅ funnel + subject_a/b |
+| Слой 3: авто-постинг Telegram | ✅ `publish.py` |
+| Слой 3: email через ESP (Brevo/beehiiv/Mailchimp) | ✅ `esp.py` (Mailchimp + local) |
+| Слой 3: очередь аппрува (Airtable ИЛИ бот) | ✅ Telegram-бот И Airtable-мостик |
+| Слой 4: GEO/Sport-конфиг, масштаб строками | ✅ LT/LV/ES/HR/PL + sport/news |
+| Петля обратной связи: победившие сабжекты/хуки → промпт | ✅ `feedback.py` (kind-aware: Voonix FTD + MailMind open/CTR) |
+| MVP: один спорт+гео, полная петля | ✅ + sample/local режимы |
 
 ## Структура
 
 ```
-config/geo/{lt,lv,es,hr,pl}.yaml   # Слой 4: язык, тон, оффер, КОМПЛАЕНС (правится без кода)
-config/sport/football.yaml         # Слой 4: РЕАЛЬНЫЕ Apify-акторы + field_map, стат-поля
-prompts/post_generation.md         # Слой 2: транскреация + рубрика + плейсхолдеры + self-check
-schema/bigquery.sql                # прод-стор: match_events + post_drafts (+ метрики)
-data/sample_match.json             # фикстура для прогона без Apify
-data/metrics.json                  # тестовые метрики для петли обучения
+config/geo/{lt,lv,es,hr,pl}.yaml   # язык, тон, оффер, выходы, email-списки, КОМПЛАЕНС
+config/sport/football.yaml         # Apify-акторы (+enrichers), стат-поля
+config/news.yaml                   # GDELT-актор инфоповодов
+prompts/post_generation.md         # Слой 2: посты (result/news)
+prompts/email_generation.md        # Слой 2: email-конверсия
+schema/bigquery.sql                # стор: match_events + post_drafts (telegram+email)
+data/sample_match.json, sample_news.json, metrics.json   # для прогона без внешних API
 src/
-  ingest.py     # Слой 1: Apify(field_map)/sample -> нормализация -> стор
-  generate.py   # Слой 2: событие (+выученные хуки) -> Claude -> черновик (идемпотентно, мульти-гео)
+  ingest.py     # матчи (field_map) + новости (ingest_news), type=result|news
+  enrich.py     # xG-долив (Understat/FBref), best-effort, ENRICH=true
+  generate.py   # Claude -> черновик на каждый выход (telegram/email), мульти-гео
   review.py     # вход ревью: REVIEW_SURFACE=telegram|airtable
-  bot.py        # ревью в Telegram (always-on): кнопки A/B/Reject + правка реплаем
-  airtable_bridge.py # ревью в Airtable: зеркалит драфты в грид, по аппруву публикует
-  publish.py    # Слой 3: подстановка {{CTA_LINK}}(+subid)/{{PROMO_CODE}} -> канал
-  orchestrate.py# воркер (cron): ingest + generate по всем GEO
-  feedback.py   # петля обучения: published × метрики -> winners block для промпта
-  metrics.py    # источник перформанса по subid: local | bigquery (твой Voonix/FTD)
-  store.py      # стор (единый источник правды): local (тест) | bigquery (прод)
+  bot.py / airtable_bridge.py   # поверхности аппрува (посты и письма)
+  deliver.py    # маршрут доставки по kind: publish (канал) | send_email (ESP)
+  publish.py / esp.py           # Слой 3: Telegram / Mailchimp(+local)
+  feedback.py / metrics.py      # петля обучения (kind-aware) + источник метрик
+  orchestrate.py / webhook.py   # воркер (cron) / событийный триггер
+  store.py      # единый источник правды: local (тест) | bigquery (прод)
 ```
 
-## Поверхность ревью: Telegram или Airtable
+## Прогнать СЕГОДНЯ (без GCP/Apify/ESP)
 
-`REVIEW_SURFACE=telegram` (по умолчанию) — аппрув в личке бота, кнопки A/B, правка реплаем.
-Быстро для соло-пилота; нужен `ADMIN_CHAT_ID`.
-
-`REVIEW_SURFACE=airtable` — аппрув в гриде: видно всё разом, статус дропдауном, правка в ячейке,
-несколько ревьюеров. `chat_id НЕ нужен` (токен бота — только для постинга). Стор остаётся
-единым источником правды, Airtable — окно ревью.
-
-**Настройка базы Airtable** (таблица `Drafts`, поля):
-`Draft ID` (text) · `Match` (text) · `GEO` (text) · `Channel` (text) · `Compliance` (text) ·
-`Post A` (long text) · `Post B` (long text) · `Hook rationale` (text) ·
-`Variant` (single select: A, B) · `Edited text` (long text) ·
-`Status` (single select: Pending, Approved, Rejected) · `Processed` (checkbox) · `Published link` (url).
-Менеджер: открывает грид, читает A/B, ставит `Variant` (или пишет `Edited text`), меняет `Status`
-на Approved → пост уходит в канал, в `Published link` падает ссылка.
-
-## 1) Прогнать СЕГОДНЯ (без GCP/Apify)
-
-Нужны только: ключ Anthropic + бот Telegram + твой chat_id + публичный канал.
+`STORE_BACKEND=local SOURCE=sample METRICS_BACKEND=local ESP_BACKEND=local`. Нужны только
+ANTHROPIC + Telegram (для постинга). Email-ветка в local пишет письма в `data/sent_emails/`.
 
 ```bash
 pip install -r requirements.txt
-cp .env.example .env     # заполни ANTHROPIC_API_KEY, TELEGRAM_BOT_TOKEN, ADMIN_CHAT_ID,
-                         # LT_CHANNEL_ID, LT_BRAND/LT_AFFILIATE_URL/LT_PROMO_CODE
-                         # оставь STORE_BACKEND=local SOURCE=sample METRICS_BACKEND=local
-
-python -m src.review      # терминал 1 — ревью (telegram по умолчанию; для грида REVIEW_SURFACE=airtable)
-python -m src.orchestrate  # терминал 2 — прогнать петлю на sample-матче
+cp .env.example .env       # заполни ANTHROPIC_API_KEY, TELEGRAM_BOT_TOKEN, ADMIN_CHAT_ID, LT_*
+python -m src.review       # терминал 1 — аппрув (telegram; для грида REVIEW_SURFACE=airtable)
+python -m src.orchestrate  # терминал 2 — петля на sample-матче + sample-новости
 ```
 
-Боту в личку прилетит черновик (A/B + статус комплаенса). **✅ A/B** → пост в канал;
-правка — **ответь (reply)** своим текстом. Менеджер = редактор-аппрувер, в гео руками не пишет.
+## Включить email-ветку
 
-> `ADMIN_CHAT_ID`: напиши боту, открой `https://api.telegram.org/bot<TOKEN>/getUpdates` → `chat.id`.
-> Бота добавь админом публичного канала с правом постить.
+В `config/geo/lt.yaml`: `outputs: [telegram, email]` (+ `email:` блок уже есть).
+`ESP_BACKEND=mailchimp`, `MAILCHIMP_API_KEY`, и `LT_MC_LIST_ID/WARM_SEGMENT/...` в `.env`.
+Тёплый/холодный — через `email.audiences: [warm, cold]`.
 
-## 2) Перевод в прод
+## Новости (инфоповоды) и xG
 
-- **Стор → BigQuery:** прогони `schema/bigquery.sql` (замени `<DATASET>`), `STORE_BACKEND=bigquery`,
-  `BQ_DATASET=x-fabric-494718-d1.autopost`, `GOOGLE_APPLICATION_CREDENTIALS`. Реюз твоей инфры.
-- **Источник → Apify:** `SOURCE=apify`, `APIFY_TOKEN`. В `config/sport/football.yaml` основной актор —
-  `maximedupre/sofascore-live-events-scraper` (by-date, finished results, ~$0.90/1k). Сверь
-  `field_map` с реальным выводом актора (одна строка датасета) и поправь пути при необходимости.
-  Альтернативы (enabled:false): parseforge/sofascore, openligadb (явно покрывает ЧМ), flashscore.
-- **Метрики → BigQuery:** `METRICS_BACKEND=bigquery`, `METRICS_TABLE`. Можно навести вьюху-адаптер
-  на твой Voonix-стор по `subid LIKE 'tg_%'` (пример в `schema/bigquery.sql`).
+- Новости: `config/news.yaml` (GDELT-актор, темы, keyword-фильтр). `ingest_news()` кладёт их
+  как события `type=news`; промпты ведут с новостного хука, используя только title+summary.
+- xG: `ENRICH=true` + включи enricher в `config/sport/football.yaml`. Долив best-effort по именам
+  команд; уже пришедшие поля не перетираются (никаких выдумок).
 
-## 3) Масштаб (Слой 4)
+## Прод и масштаб
 
-- **+ гео:** конфиги LV/ES/HR/PL уже в репо. Включаешь через `GEOS=lt,lv,es,hr,pl`. Слои 2–3 не трогаешь.
-- **+ спорт:** добавь `config/sport/<sport>.yaml` + актор. Слой генерации тот же.
-
-## 4) Петля обратной связи (моат)
-
-Каждый пост уходит с уникальным `subid=tg_<geo>_<draft_id>` в трекинг-ссылке.
-`feedback.py` джойнит published-посты с метриками по subid (clicks/FTD), агрегирует по хукам
-и отдаёт «winners block» — он инжектится в промпт (`geo.learned_winners`). Чем больше гео и
-объёма, тем точнее пишет. Отчёт: `python -m src.feedback lt`.
-
-## 5) Деплой (Railway)
-
-`Procfile`: `bot` — отдельный always-on сервис; `worker` (`python -m src.orchestrate`) — на
-Railway Cron (напр. `*/15 * * * *`), событийный триггер через polling завершённых матчей.
+- Стор/метрики → BigQuery (`schema/bigquery.sql`; метрики — вьюха на Voonix/MailMind по `subid LIKE 'tg_%'/'em_%'`).
+- Источники → Apify (`SOURCE=apify`, `APIFY_TOKEN`; сверь `field_map` с выводом актора).
+- Гео → `GEOS=lt,lv,es,hr,pl`. Спорт → новый `config/sport/<sport>.yaml`.
+- Деплой Railway: `review` (always-on) + `worker` (Cron) + опц. `webhook` (Apify 'Actor finished' → `/run`).
 
 ## Где зашито качество
 
-1. **Человек в петле** — редактор, не автор (bot.py).
-2. **Конверсионная рубрика в промпте** — хук-вперёд, конкретика, CTA, A/B (prompts/).
-3. **Комплаенс hard-stop** — промпт использует ТОЛЬКО реальные поля payload (защита от
-   выдуманных цифр), обязателен блок 18+/RG/T&C; статус виден в превью аппрува.
-4. **Обучение на данных** — победившие хуки усиливают качество при масштабе (feedback.py).
+1. Человек в петле — редактор, не автор.
+2. Конверсионная рубрика в промптах (хук-вперёд, конкретика, HOOK→AGITATE→PROVE→OFFER→CTA, A/B).
+3. Комплаенс hard-stop: только реальные поля payload (защита от выдуманных цифр) + 18+/RG/T&C.
+4. Обучение на данных: победившие хуки/сабжекты усиливают качество при масштабе.
 
-## Что от тебя нужно для прода
+## Airtable: поля таблицы `Drafts`
 
-- Актуальные офферы по гео (бренд / трекинг-ссылка / промокод) → в `.env`.
-- Сверить `field_map` Sofascore-актора с его реальным выводом (один прогон актора).
-- Навести `METRICS_TABLE`/вьюху на твой Voonix-стор (колонка subid).
+`Draft ID` · `Kind` · `Match` · `GEO` · `Channel` · `Compliance` · `Hook rationale` ·
+`Post A`/`Post B` (для email в `Post A` — тело письма) ·
+`Subject A`/`Subject B`/`Preview text`/`Audience` (email) ·
+`Variant` (A/B) · `Edited text` · `Status` (Pending/Approved/Rejected) · `Processed` (checkbox) · `Published link`.
+
+## От тебя для прода
+
+- Актуальные офферы по гео + Mailchimp-списки/сегменты (warm/cold).
+- Один прогон Sofascore- и GDELT-акторов, чтобы сверить `field_map`.
+- `METRICS_TABLE`/вьюха на Voonix (telegram FTD) и MailMind (email open/CTR) по `subid`.

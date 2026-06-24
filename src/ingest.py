@@ -118,6 +118,7 @@ def _from_sample(sport_cfg):
     src = {"field_map": {}, "stat_map": {s: s for s in sport_cfg.get("key_stats", [])},
            "finished_values": ["finished"]}
     ev = _normalize(raw, src, sport_cfg)
+    ev["type"] = "result"
     return [ev]
 
 
@@ -145,6 +146,7 @@ def _from_apify(sport_cfg):
                 if any(ev.get(rf) is None for rf in req):
                     continue
                 seen.add(ev["match_id"])
+                ev["type"] = "result"
                 out.append(ev)
     return out
 
@@ -155,6 +157,77 @@ def ingest():
     source = os.environ.get("SOURCE", "sample")
     events = _from_sample(sport_cfg) if source == "sample" else _from_apify(sport_cfg)
 
+    store = get_store()
+    for ev in events:
+        store.upsert_event(ev)
+    return events
+
+
+# ---- НОВОСТИ (инфоповоды, Слой 1) -----------------------------------------
+import hashlib
+from .config import load_news
+
+
+def _news_normalize(raw, news_cfg):
+    fm = news_cfg["source"].get("field_map", {})
+
+    def f(name):
+        path = fm.get(name)
+        return _get_path(raw, path) if path else raw.get(name)
+
+    url = f("url") or f("id") or ""
+    nid = "news_" + hashlib.sha1(str(url).encode()).hexdigest()[:12]
+    return {
+        "match_id": nid,
+        "type": "news",
+        "sport": os.environ.get("PILOT_SPORT", "football"),
+        "league": f("league"),
+        "status": "news",
+        "title": f("title"),
+        "summary": f("summary"),
+        "url": url,
+        "source": f("source"),
+        "key_stats": {},
+        "raw": raw,
+        "finished_at": _to_iso(f("finished_at")),
+    }
+
+
+def _news_relevant(ev, news_cfg):
+    kws = news_cfg.get("keywords", [])
+    if not kws:
+        return True
+    text = f"{ev.get('title','')} {ev.get('summary','')}".lower()
+    return any(k.lower() in text for k in kws)
+
+
+def _news_from_sample(news_cfg):
+    with open(os.path.join(ROOT, "data", "sample_news.json"), "r", encoding="utf-8") as f:
+        return [_news_normalize(json.load(f), news_cfg)]
+
+
+def _news_from_apify(news_cfg):
+    from apify_client import ApifyClient
+    client = ApifyClient(os.environ["APIFY_TOKEN"])
+    src = news_cfg["source"]
+    run = client.actor(src["actor_id"]).call(run_input=src.get("run_input", {}))
+    out, seen = [], set()
+    for item in client.dataset(run["defaultDatasetId"]).iterate_items():
+        ev = _news_normalize(item, news_cfg)
+        if ev["match_id"] in seen or not _news_relevant(ev, news_cfg):
+            continue
+        seen.add(ev["match_id"])
+        out.append(ev)
+    return out
+
+
+def ingest_news():
+    """Забрать инфоповоды. Возвращает список news-событий (или [] если выключено)."""
+    news_cfg = load_news()
+    if not news_cfg.get("enabled"):
+        return []
+    source = os.environ.get("SOURCE", "sample")
+    events = _news_from_sample(news_cfg) if source == "sample" else _news_from_apify(news_cfg)
     store = get_store()
     for ev in events:
         store.upsert_event(ev)

@@ -33,6 +33,10 @@ def load_sport(sport=None):
     return load_yaml(os.path.join(ROOT, "config", "sport", f"{sport}.yaml"))
 
 
+def load_news():
+    return load_yaml(os.path.join(ROOT, "config", "news.yaml"))
+
+
 def load_prompt(name="post_generation"):
     with open(os.path.join(ROOT, "prompts", f"{name}.md"), "r", encoding="utf-8") as f:
         return f.read()

@@ -50,10 +50,12 @@ class LocalJsonStore:
             d["events"][event["match_id"]] = event
             self._write(d)
 
-    def event_has_draft(self, match_id, geo):
+    def event_has_draft(self, match_id, geo, kind=None, audience=None):
         d = self._read()
         return any(
             dr["match_id"] == match_id and dr["geo"] == geo
+            and (kind is None or dr.get("kind") == kind)
+            and (audience is None or dr.get("audience") == audience)
             for dr in d["drafts"].values()
         )
 
@@ -139,33 +141,38 @@ class BigQueryStore:
             self._p("finished_at", "TIMESTAMP", event.get("finished_at")),
         ])
 
-    def event_has_draft(self, match_id, geo):
-        rows = self._q(
-            f"SELECT 1 FROM {self.drafts} WHERE match_id=@m AND geo=@g LIMIT 1",
-            [self._p("m", "STRING", match_id), self._p("g", "STRING", geo)],
-        )
-        return len(rows) > 0
+    def event_has_draft(self, match_id, geo, kind=None, audience=None):
+        sql = f"SELECT 1 FROM {self.drafts} WHERE match_id=@m AND geo=@g"
+        params = [self._p("m", "STRING", match_id), self._p("g", "STRING", geo)]
+        if kind is not None:
+            sql += " AND kind=@k"
+            params.append(self._p("k", "STRING", kind))
+        if audience is not None:
+            sql += " AND audience=@a"
+            params.append(self._p("a", "STRING", audience))
+        return len(self._q(sql + " LIMIT 1", params)) > 0
+
+    # колонки таблицы post_drafts, которые можно вставлять напрямую
+    _DRAFT_COLS = {
+        "draft_id", "match_id", "geo", "kind", "channel_id", "status",
+        "post_a", "post_b", "chosen_variant", "edited_text", "hook_rationale",
+        "compliance_ok", "compliance_notes", "claude_model", "notified",
+        "subid", "hook", "published_text", "airtable_record_id",
+        "audience", "subject_a", "subject_b", "preview_text", "body_html",
+        "edited_subject", "esp_campaign_id",
+    }
 
     def save_draft(self, draft):
-        sql = f"""
-        INSERT INTO {self.drafts}
-          (draft_id,match_id,geo,channel_id,status,post_a,post_b,hook_rationale,
-           compliance_ok,compliance_notes,claude_model,notified,created_at)
-        VALUES
-          (@id,@m,@g,@c,'pending',@a,@b,@hr,@cok,@cnotes,@model,FALSE,CURRENT_TIMESTAMP())
-        """
-        self._q(sql, [
-            self._p("id", "STRING", draft["draft_id"]),
-            self._p("m", "STRING", draft["match_id"]),
-            self._p("g", "STRING", draft["geo"]),
-            self._p("c", "STRING", draft.get("channel_id")),
-            self._p("a", "STRING", draft["post_a"]),
-            self._p("b", "STRING", draft["post_b"]),
-            self._p("hr", "STRING", draft.get("hook_rationale")),
-            self._p("cok", "BOOL", draft.get("compliance_ok", False)),
-            self._p("cnotes", "STRING", draft.get("compliance_notes")),
-            self._p("model", "STRING", draft.get("claude_model")),
-        ])
+        cols = [c for c in draft if c in self._DRAFT_COLS]
+        type_map = {bool: "BOOL", int: "INT64"}
+        params, names, values = [], [], []
+        for c in cols:
+            names.append(c)
+            values.append(f"@{c}")
+            params.append(self._p(c, type_map.get(type(draft[c]), "STRING"), draft[c]))
+        names.append("created_at"); values.append("CURRENT_TIMESTAMP()")
+        sql = f"INSERT INTO {self.drafts} ({', '.join(names)}) VALUES ({', '.join(values)})"
+        self._q(sql, params)
 
     def get_pending_unnotified(self):
         rows = self._q(

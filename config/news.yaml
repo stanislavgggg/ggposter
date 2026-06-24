@@ -1,0 +1,31 @@
+# ============================================================
+#  NEWS-CONFIG — инфоповоды (Слой 1)
+#  Система реагирует на новости, не только на завершённые матчи.
+# ============================================================
+
+enabled: true
+
+# Реальный актор из плана: Reuters/AP/BBC/CNN/Al Jazeera/Bloomberg/GDELT, 65+ языков, без ключей
+source:
+  actor_id: "cloud9_ai/gdelt-news-scraper"
+  run_input:
+    queries: ["FIFA World Cup", "World Cup 2026"]
+    maxItems: 30
+    timespan: "24h"
+  field_map:
+    id: "url"                 # url как стабильный id (хешируется)
+    title: "title"
+    summary: "description"
+    url: "url"
+    source: "domain"
+    league: "query"           # тема/запрос -> наш league/topic
+    finished_at: "seendate"
+
+# Альтернатива (GDELT 2.0 DOC API, поиск по терму, каждые 15 мин):
+#   smart_tech_resources/gdelt-news
+
+# Фильтр релевантности (подстроки в title/summary). Пусто = брать всё.
+keywords: ["World Cup", "Pasaulio", "Mundial", "Svjetsko"]
+
+trigger:
+  lookback_hours: 24

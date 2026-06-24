@@ -107,6 +107,20 @@ sources:
 # --- xG-обогащение (опционально, отдельный шаг) ---
 #   parseforge/fbref-scraper  |  mirthful_radish/understat-xg-football-scraper
 
+# --- xG-обогащение (опционально, отдельный шаг enrich.py; ENRICH=true) ---
+# Best-effort merge по нормализованным именам команд. Поправь field_map под актора.
+enrichers:
+  - name: understat_xg
+    actor_id: "mirthful_radish/understat-xg-football-scraper"
+    enabled: false
+    merges: [xg]                       # какие поля доливать в key_stats
+    run_input: { league: "World Cup", season: "2026" }
+    field_map:
+      team: "team"                     # имя команды в выводе актора
+      xg: "xG"
+  # FBref как альтернатива: parseforge/fbref-scraper
+  # Травмы/трансферы (контекст, не статы): Transfermarkt-актор -> можно лить в raw
+
 angle_hints:
   - "Неожиданный результат / апсет"
   - "Крупный счёт / разгром"

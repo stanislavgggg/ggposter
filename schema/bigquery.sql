@@ -24,12 +24,20 @@ CREATE TABLE IF NOT EXISTS `<DATASET>.post_drafts` (
   draft_id            STRING NOT NULL,   -- PK
   match_id            STRING,
   geo                 STRING,
+  kind                STRING,            -- telegram | email
   channel_id          STRING,
   status              STRING,            -- pending / approved / rejected / published
-  post_a              STRING,            -- вариант A
-  post_b              STRING,            -- вариант B (A/B хук)
+  post_a              STRING,            -- (telegram) вариант A
+  post_b              STRING,            -- (telegram) вариант B
+  audience            STRING,            -- (email) warm | cold
+  subject_a           STRING,            -- (email) сабжект A
+  subject_b           STRING,            -- (email) сабжект B
+  preview_text        STRING,            -- (email) preview
+  body_html           STRING,            -- (email) тело
+  edited_subject      STRING,            -- (email) правка сабжекта
+  esp_campaign_id     STRING,            -- (email) id кампании в ESP
   chosen_variant      STRING,            -- A / B (что выбрал/отредактировал менеджер)
-  edited_text         STRING,            -- если менеджер правил руками
+  edited_text         STRING,            -- ручная правка (текст поста / HTML письма)
   hook_rationale      STRING,
   compliance_ok       BOOL,
   compliance_notes    STRING,

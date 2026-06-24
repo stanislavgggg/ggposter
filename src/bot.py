@@ -17,7 +17,7 @@ import html
 
 from .store import get_store
 from .telegram import Telegram, inline_keyboard
-from .publish import publish_draft
+from .deliver import deliver
 
 ADMIN_CHAT_ID = os.environ.get("ADMIN_CHAT_ID")
 POLL_PENDING_EVERY = int(os.environ.get("POLL_PENDING_EVERY", "10"))  # сек
@@ -26,18 +26,23 @@ POLL_PENDING_EVERY = int(os.environ.get("POLL_PENDING_EVERY", "10"))  # сек
 def _preview(draft):
     flag = "✅" if draft.get("compliance_ok") else "⚠️"
     notes = "" if draft.get("compliance_ok") else f"\n⚠️ Compliance: {draft.get('compliance_notes')}"
-    return (
-        f"🆕 <b>Черновик</b> {draft['draft_id']} · GEO={draft['geo']} · комплаенс {flag}{notes}\n"
-        f"<i>{html.escape(draft.get('hook_rationale',''))}</i>\n\n"
-        f"<b>— Вариант A —</b>\n{html.escape(draft['post_a'])}\n\n"
-        f"<b>— Вариант B —</b>\n{html.escape(draft['post_b'])}"
-    )
+    head = (f"🆕 <b>Черновик</b> {draft['draft_id']} · {draft.get('kind','telegram')}"
+            f" · GEO={draft['geo']} · комплаенс {flag}{notes}\n"
+            f"<i>{html.escape(draft.get('hook_rationale',''))}</i>\n")
+    if draft.get("kind") == "email":
+        return (head + f"audience: {draft.get('audience','warm')}\n\n"
+                f"<b>Subject A:</b> {html.escape(draft.get('subject_a',''))}\n"
+                f"<b>Subject B:</b> {html.escape(draft.get('subject_b',''))}\n"
+                f"<b>Preview:</b> {html.escape(draft.get('preview_text',''))}\n\n"
+                f"<b>Body:</b>\n{html.escape(draft.get('body_html',''))[:1500]}")
+    return (head + f"\n<b>— Вариант A —</b>\n{html.escape(draft.get('post_a',''))}\n\n"
+            f"<b>— Вариант B —</b>\n{html.escape(draft.get('post_b',''))}")
 
 
-def _buttons(draft_id):
+def _buttons(draft_id, kind="telegram"):
+    a, b = ("✅ Отправить A", "✅ Отправить B") if kind == "email" else ("✅ Опубликовать A", "✅ Опубликовать B")
     return inline_keyboard([
-        [("✅ Опубликовать A", f"ap:A:{draft_id}"),
-         ("✅ Опубликовать B", f"ap:B:{draft_id}")],
+        [(a, f"ap:A:{draft_id}"), (b, f"ap:B:{draft_id}")],
         [("❌ Отклонить", f"rj:{draft_id}")],
     ])
 
@@ -53,7 +58,7 @@ class ApprovalBot:
         for draft in self.store.get_pending_unnotified():
             msg = self.tg.send_message(
                 ADMIN_CHAT_ID, _preview(draft),
-                reply_markup=_buttons(draft["draft_id"]),
+                reply_markup=_buttons(draft["draft_id"], draft.get("kind", "telegram")),
             )
             self.store.update_draft(draft["draft_id"], notified=True)
             self.msg_to_draft[msg["message_id"]] = draft["draft_id"]
@@ -67,10 +72,10 @@ class ApprovalBot:
             _, variant, draft_id = data.split(":", 2)
             self.store.update_draft(draft_id, status="approved",
                                     chosen_variant=variant)
-            published_id = publish_draft(draft_id, tg=self.tg)
-            self.tg.answer_callback(cq["id"], f"Опубликовано (msg {published_id})")
+            out = deliver(draft_id, tg=self.tg)
+            self.tg.answer_callback(cq["id"], f"Отправлено ({out})")
             self.tg.edit_reply_markup(chat_id, msg_id, reply_markup=None)
-            self.tg.send_message(chat_id, f"✅ {draft_id}: опубликован вариант {variant}")
+            self.tg.send_message(chat_id, f"✅ {draft_id}: отправлен вариант {variant}")
         elif data.startswith("rj:"):
             draft_id = data.split(":", 1)[1]
             self.store.update_draft(draft_id, status="rejected")
@@ -88,9 +93,9 @@ class ApprovalBot:
             return
         self.store.update_draft(draft_id, status="approved",
                                 edited_text=msg["text"])
-        published_id = publish_draft(draft_id, tg=self.tg)
+        out = deliver(draft_id, tg=self.tg)
         self.tg.send_message(msg["chat"]["id"],
-                             f"✏️ {draft_id}: опубликован твой отредактированный текст (msg {published_id})")
+                             f"✏️ {draft_id}: отправлен твой отредактированный текст ({out})")
 
     def loop(self):
         print("ApprovalBot запущен. Жду драфты и нажатия...")
