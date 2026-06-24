@@ -21,6 +21,10 @@
    - `SOURCE=apify`
    - `APIFY_TOKEN=apify_api_...` (твой токен)
 4. Зайди в стор Apify и добавь актор **`maximedupre/sofascore-live-events-scraper`** (это уже прописано в `config/sport/football.yaml`). Нажми у него **Try / Run** один раз.
+   - ⚠️ В `run_input` уже выставлено **`includeMatchDetails: true`** — БЕЗ него актор не отдаёт `incidents`, а парсер берёт из них счёт/FT → вернётся **0 событий**. Не убирай.
+   - `maxItems: 25` — это бюджет сканирования футбола ЗА ДАТУ (не число постов). Этот актор не фильтрует по турниру на своей стороне, лиги отсекаются у нас (`leagues: ["World Cup"]`). Если в день много матчей других лиг — подними maxItems, иначе можешь не зацепить ЧМ.
+   - `timeout_secs: 600` — лимит запуска (дефолт актора 300 ловил **TIMED-OUT**, т.к. детали тянутся по каждому матчу). Можно переопределить env `APIFY_TIMEOUT_SECS`.
+   - На своём задеплоенном инпуте убери поле `statusFilter` — у этого актора его в схеме нет, оно игнорируется.
 5. **Важная сверка** (1 минута): после прогона открой результат → возьми **одну строку** данных и посмотри, как там называются поля (`homeTeam`, `score` и т.д.). Если имена отличаются от тех, что в `config/sport/football.yaml` (блок `field_map`) — поправь пути там. Структуру вокруг трогать не нужно.
 6. Новости: актор **`cloud9_ai/gdelt-news-scraper`** уже прописан в `config/news.yaml`, ключей не требует.
 7. (Опц.) xG: в `.env` поставь `ENRICH=true` и в `config/sport/football.yaml` у `understat_xg` поставь `enabled: true`.
@@ -136,9 +140,10 @@
 ```
 # база
 PILOT_GEO=lt   PILOT_SPORT=football   GEOS=lt,lv,es,hr,pl
+EVENTS_PER_RUN=1   # сколько новых матчей брать за прогон (1 = первый, о котором ещё не писали; 0 = все)
 ANTHROPIC_API_KEY=…   TELEGRAM_BOT_TOKEN=…(новый!)   ADMIN_CHAT_ID=…
 # источники
-SOURCE=apify   APIFY_TOKEN=…   ENRICH=true
+SOURCE=apify   APIFY_TOKEN=…   ENRICH=true   APIFY_TIMEOUT_SECS=600
 # хранилище + метрики
 STORE_BACKEND=bigquery   BQ_DATASET=x-fabric-494718-d1.autopost   GOOGLE_APPLICATION_CREDENTIALS=…
 METRICS_BACKEND=bigquery   METRICS_TABLE=x-fabric-494718-d1.autopost.post_metrics

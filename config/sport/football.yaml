@@ -8,8 +8,11 @@ sport: football
 sport_emoji: "⚽"
 
 # --- Какие лиги/турниры отслеживаем (фильтр + триггер генерации) ---
+# Подстрока, регистронезависимо. "World Cup" ловит и "FIFA World Cup", и "World Cup".
+# Этот актор НЕ умеет фильтровать по турниру на своей стороне — он отдаёт весь футбол
+# за дату, а мы фильтруем здесь. Если ловишь лишнее (напр. молодёжный/женский ЧМ) — сузь.
 leagues:
-  - "FIFA World Cup"          # подстрока, матчится по league (tournament.name)
+  - "World Cup"
 
 # --- Триггер: пост генерируется, когда матч завершён ---
 trigger:
@@ -34,11 +37,19 @@ sources:
     actor_id: "maximedupre/sofascore-live-events-scraper"
     enabled: true
     parser: sofascore_scheduled        # актор-специфичный адаптер (см. ingest.PARSERS)
+    timeout_secs: 600                   # лимит запуска актора (.call). Дефолт актора 300 ловил TIMED-OUT,
+                                        # т.к. includeMatchDetails дотягивает детали по каждому матчу. Можно
+                                        # переопределить env APIFY_TIMEOUT_SECS.
     run_input:
       mode: "scheduledEvents"          # единственный режим «по дате» у этого актора
       sport: "football"
       date: "${MATCH_DATE}"            # ingest подставит дату(ы) по lookback_days
-      maxItems: 30
+      maxItems: 25                     # БЮДЖЕТ СКАНИРОВАНИЯ за дату (весь футбол), НЕ число постов.
+                                        # Меньше = быстрее/дешевле, но рискуешь не зацепить нужный матч,
+                                        # если в этот день много матчей других лиг (MLS/Brazil/Скандинавия летом).
+      includeMatchDetails: true        # ОБЯЗАТЕЛЬНО: без него актор не вернёт incidents ->
+                                        # парсер не увидит FT/счёт/голы -> 0 событий. Это же — основная
+                                        # нагрузка/время запуска (детали тянутся по каждому матчу).
     # field_map/stat_map не нужны: парсер берёт счёт/статы из incidents (FT),
     # т.к. верхний score и eventStatus у этого актора ненадёжны.
 

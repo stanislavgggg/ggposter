@@ -132,38 +132,60 @@ def _dataset_id(run):
     return run.default_dataset_id
 
 
+def _run_status(run):
+    """Статус запуска (SUCCEEDED/TIMED-OUT/...) — оба формата результата .call()."""
+    if run is None:
+        return None
+    if isinstance(run, dict):
+        return run.get("status")
+    return getattr(run, "status", None)
+
+
 def _from_apify(sport_cfg):
     from apify_client import ApifyClient  # lazy
     client = ApifyClient(os.environ["APIFY_TOKEN"])
     req = sport_cfg["trigger"]["required_fields"]
     out, seen = [], set()
+    seen_leagues = set()                 # для диагностики, если лиг-фильтр всё отсеял
 
     for src in sport_cfg.get("sources", []):
         if not src.get("enabled"):
             continue
         parser = PARSERS.get(src.get("parser"))      # актор-специфичный адаптер, если задан
+        timeout = int(src.get("timeout_secs") or os.environ.get("APIFY_TIMEOUT_SECS", "600"))
         dates = _target_dates(sport_cfg) if "${MATCH_DATE}" in json.dumps(src.get("run_input", {})) else [None]
         for d in dates:
             run_input = _fill_input(src.get("run_input", {}), d) if d else src.get("run_input", {})
-            run = client.actor(src["actor_id"]).call(run_input=run_input)
+            run = client.actor(src["actor_id"]).call(run_input=run_input, timeout_secs=timeout)
+            status = _run_status(run)
+            if status and str(status).upper() != "SUCCEEDED":
+                print(f"[ingest] WARN {src['actor_id']} date={d} status={status} "
+                      f"(датасет может быть неполным; подними timeout_secs / снизь maxItems)")
             for item in client.dataset(_dataset_id(run)).iterate_items():
                 if parser:
                     ev = parser(item, sport_cfg)     # сам решает finished/нет (None=пропустить)
-                    if ev is None or ev["match_id"] in seen:
+                    if ev is None:
                         continue
                 else:
                     ev = _normalize(item, src, sport_cfg)
-                    if ev["match_id"] in seen:
-                        continue
                     if not _is_finished(item, src, ev["status"]):
                         continue
-                    if not _league_matches(ev["league"], sport_cfg):
-                        continue
-                    if any(ev.get(rf) is None for rf in req):
-                        continue
                     ev["type"] = "result"
+                # --- общие фильтры для ОБЕИХ веток ---
+                if ev["match_id"] in seen:
+                    continue
+                if ev.get("league"):
+                    seen_leagues.add(ev["league"])
+                if not _league_matches(ev.get("league"), sport_cfg):
+                    continue
+                if any(ev.get(rf) is None for rf in req):
+                    continue
                 seen.add(ev["match_id"])
                 out.append(ev)
+
+    if not out and seen_leagues:
+        print(f"[ingest] 0 событий после фильтра лиг {sport_cfg.get('leagues')}. "
+              f"Виденные лиги: {sorted(seen_leagues)} — подправь leagues в config/sport.")
     return out
 
 

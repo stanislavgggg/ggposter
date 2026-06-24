@@ -59,6 +59,12 @@ class LocalJsonStore:
             for dr in d["drafts"].values()
         )
 
+    def event_has_any_draft(self, match_id):
+        """Есть ли хоть один драфт по этому матчу (для любого гео/kind) —
+        т.е. «об этом матче уже писали»."""
+        d = self._read()
+        return any(dr["match_id"] == match_id for dr in d["drafts"].values())
+
     # --- drafts ---
     def save_draft(self, draft):
         with self._lock:
@@ -158,6 +164,10 @@ class BigQueryStore:
             sql += " AND audience=@a"
             params.append(self._p("a", "STRING", audience))
         return len(self._q(sql + " LIMIT 1", params)) > 0
+
+    def event_has_any_draft(self, match_id):
+        sql = f"SELECT 1 FROM {self.drafts} WHERE match_id=@m LIMIT 1"
+        return len(self._q(sql, [self._p("m", "STRING", match_id)])) > 0
 
     # колонки таблицы post_drafts, которые можно вставлять напрямую
     _DRAFT_COLS = {
