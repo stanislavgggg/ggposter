@@ -141,62 +141,192 @@ def _run_status(run):
     return getattr(run, "status", None)
 
 
-def _from_apify(sport_cfg):
+def _from_apify(sport_cfg, limit=None, store=None):
+    """Диспетчер источников. Для каждого включённого источника выбирает режим:
+      two_pass    — проход 1 (список без деталей) -> выбор свежайшего НОВОГО матча ЧМ ->
+                    проход 2 (детали по ОДНОМУ матчу через eventUrls). Дёшево.
+      single_pass — старое поведение: тянет детали по всем maxItems сразу.
+    Переопределить можно env FETCH_MODE.
+    """
     from apify_client import ApifyClient  # lazy
     client = ApifyClient(os.environ["APIFY_TOKEN"])
-    req = sport_cfg["trigger"]["required_fields"]
-    out, seen = [], set()
-    seen_leagues = set()                 # для диагностики, если лиг-фильтр всё отсеял
+    store = store or get_store()
+    out, seen, seen_leagues = [], set(), set()
+    any_league_match = False
 
     for src in sport_cfg.get("sources", []):
         if not src.get("enabled"):
             continue
-        parser = PARSERS.get(src.get("parser"))      # актор-специфичный адаптер, если задан
-        timeout = int(src.get("timeout_secs") or os.environ.get("APIFY_TIMEOUT_SECS", "600"))
-        dates = _target_dates(sport_cfg) if "${MATCH_DATE}" in json.dumps(src.get("run_input", {})) else [None]
-        for d in dates:
-            run_input = _fill_input(src.get("run_input", {}), d) if d else src.get("run_input", {})
-            run = client.actor(src["actor_id"]).call(run_input=run_input, timeout_secs=timeout)
-            status = _run_status(run)
-            if status and str(status).upper() != "SUCCEEDED":
-                print(f"[ingest] WARN {src['actor_id']} date={d} status={status} "
-                      f"(датасет может быть неполным; подними timeout_secs / снизь maxItems)")
-            for item in client.dataset(_dataset_id(run)).iterate_items():
-                if parser:
-                    ev = parser(item, sport_cfg)     # сам решает finished/нет (None=пропустить)
-                    if ev is None:
-                        continue
-                else:
-                    ev = _normalize(item, src, sport_cfg)
-                    if not _is_finished(item, src, ev["status"]):
-                        continue
-                    ev["type"] = "result"
-                # --- общие фильтры для ОБЕИХ веток ---
-                if ev["match_id"] in seen:
-                    continue
-                if ev.get("league"):
-                    seen_leagues.add(ev["league"])
-                if not _league_matches(ev.get("league"), sport_cfg):
-                    continue
-                if any(ev.get(rf) is None for rf in req):
-                    continue
-                seen.add(ev["match_id"])
-                out.append(ev)
+        mode = (os.environ.get("FETCH_MODE") or src.get("fetch_mode") or "single_pass").lower()
+        if mode == "two_pass":
+            evs, matched = _two_pass_source(src, sport_cfg, client, limit, store, seen, seen_leagues)
+            out.extend(evs)
+            any_league_match = any_league_match or matched
+            if limit and len(out) >= limit:
+                break
+        else:
+            evs, matched = _single_pass_source(src, sport_cfg, client, seen, seen_leagues)
+            out.extend(evs)
+            any_league_match = any_league_match or matched
 
-    if not out and seen_leagues:
-        print(f"[ingest] 0 событий после фильтра лиг {sport_cfg.get('leagues')}. "
+    if not out and not any_league_match and seen_leagues:
+        print(f"[ingest] 0 событий: ни одна лига не совпала с {sport_cfg.get('leagues')}. "
               f"Виденные лиги: {sorted(seen_leagues)} — подправь leagues в config/sport.")
     return out
 
 
+def _single_pass_source(src, sport_cfg, client, seen, seen_leagues):
+    req = sport_cfg["trigger"]["required_fields"]
+    parser = PARSERS.get(src.get("parser"))
+    timeout = int(src.get("timeout_secs") or os.environ.get("APIFY_TIMEOUT_SECS", "600"))
+    run_input_cfg = src.get("run_input", {})
+    dates = _target_dates(sport_cfg) if "${MATCH_DATE}" in json.dumps(run_input_cfg) else [None]
+    out, matched_any = [], False
+    for d in dates:
+        run_input = _fill_input(run_input_cfg, d) if d else run_input_cfg
+        run = client.actor(src["actor_id"]).call(run_input=run_input, timeout_secs=timeout)
+        status = _run_status(run)
+        if status and str(status).upper() != "SUCCEEDED":
+            print(f"[ingest] WARN {src['actor_id']} date={d} status={status} "
+                  f"(подними timeout_secs / снизь maxItems)")
+        for item in client.dataset(_dataset_id(run)).iterate_items():
+            if parser:
+                ev = parser(item, sport_cfg)
+                if ev is None:
+                    continue
+            else:
+                ev = _normalize(item, src, sport_cfg)
+                if not _is_finished(item, src, ev["status"]):
+                    continue
+                ev["type"] = "result"
+            if ev["match_id"] in seen:
+                continue
+            if not _league_matches(ev.get("league"), sport_cfg):
+                if ev.get("league"):
+                    seen_leagues.add(ev["league"])
+                continue
+            matched_any = True
+            if any(ev.get(rf) is None for rf in req):
+                continue
+            seen.add(ev["match_id"])
+            out.append(ev)
+    return out, matched_any
+
+
+# ---- двухпроходный режим (дёшево: детали только по нужному матчу) ----------
+def _event_url(row, fm):
+    """URL матча для прохода 2 (eventUrls). Берём из field_map.event_url, иначе из
+    известных полей, иначе строим из slug+id (best-effort)."""
+    for key in (fm.get("event_url"), "url", "eventUrl", "matchUrl", "sourceUrl"):
+        if not key:
+            continue
+        v = _get_path(row, key)
+        if v and "sofascore.com" in str(v) and "/scheduled" not in str(v):
+            return str(v)
+    slug, rid = row.get("slug"), row.get("id")
+    if slug and rid:
+        return f"https://www.sofascore.com/{slug}/{rid}"
+    return None
+
+
+def _list_candidate(row, fm, sport_cfg):
+    """Из строки прохода 1 (без деталей) собрать кандидата для отбора."""
+    if row.get("rowType") not in (None, "event"):
+        return None
+    home = _get_path(row, fm.get("home", "homeTeam.name"))
+    away = _get_path(row, fm.get("away", "awayTeam.name"))
+    if not home or not away:
+        return None
+    league = _get_path(row, fm.get("league", "tournament.name"))
+    if not league:
+        t = row.get("tournament")
+        league = t.get("name") if isinstance(t, dict) else (t if isinstance(t, str) else None)
+    return {
+        "match_id": str(_get_path(row, fm.get("match_id", "id"))),
+        "home": home, "away": away, "league": league,
+        "finished_at": _to_iso(_get_path(row, fm.get("finished_at", "startTimestamp"))),
+        "url": _event_url(row, fm),
+    }
+
+
+def _two_pass_source(src, sport_cfg, client, limit, store, seen, seen_leagues):
+    fm = src.get("field_map", {})
+    req = sport_cfg["trigger"]["required_fields"]
+    timeout = int(src.get("timeout_secs") or os.environ.get("APIFY_TIMEOUT_SECS", "600"))
+    cap = limit if limit else int(os.environ.get("EVENTS_PER_RUN", "1") or 1)
+    max_lookups = int(src.get("max_detail_lookups", 5))
+
+    # ---- ПРОХОД 1: список без деталей (дёшево) ----
+    list_input = src.get("list_input", {})
+    dates = _target_dates(sport_cfg) if "${MATCH_DATE}" in json.dumps(list_input) else [None]
+    candidates, cids, matched_any = [], set(), False
+    for d in dates:
+        ri = _fill_input(list_input, d) if d else list_input
+        run = client.actor(src["actor_id"]).call(run_input=ri, timeout_secs=timeout)
+        st = _run_status(run)
+        if st and str(st).upper() != "SUCCEEDED":
+            print(f"[ingest] WARN pass1 {src['actor_id']} date={d} status={st}")
+        for row in client.dataset(_dataset_id(run)).iterate_items():
+            c = _list_candidate(row, fm, sport_cfg)
+            if not c:
+                continue
+            if not _league_matches(c["league"], sport_cfg):
+                if c["league"]:
+                    seen_leagues.add(c["league"])
+                continue
+            matched_any = True
+            if c["match_id"] in cids or c["match_id"] in seen:
+                continue
+            if store.event_has_any_draft(c["match_id"]):     # «об этом уже писали»
+                continue
+            cids.add(c["match_id"])
+            candidates.append(c)
+
+    candidates.sort(key=lambda c: c.get("finished_at") or "", reverse=True)  # свежие первыми
+    print(f"[ingest] pass1: новых кандидатов ЧМ={len(candidates)} нужно={cap}")
+
+    # ---- ПРОХОД 2: детали только по нужным матчам, пока не наберём cap финалов ----
+    detail_input = src.get("detail_input", {})
+    out, attempts = [], 0
+    for c in candidates:
+        if len(out) >= cap or attempts >= max_lookups:
+            break
+        if not c.get("url"):
+            print(f"[ingest] pass2: нет URL матча {c['match_id']} (проверь field_map.event_url)")
+            continue
+        attempts += 1
+        di = dict(detail_input); di["startUrls"] = [c["url"]]
+        run = client.actor(src["actor_id"]).call(run_input=di, timeout_secs=timeout)
+        ev = None
+        for row in client.dataset(_dataset_id(run)).iterate_items():
+            ev = _parse_sofascore_scheduled(row, sport_cfg, require_rowtype=False)
+            if ev:
+                break
+        if not ev:
+            print(f"[ingest] pass2: {c['url']} -> не финал/нет данных, пропускаю")
+            continue
+        if any(ev.get(rf) is None for rf in req):
+            print(f"[ingest] pass2: {c['url']} -> нет обязательных полей {req}, пропускаю")
+            continue
+        seen.add(ev["match_id"])
+        out.append(ev)
+        print(f"[ingest] pass2: ВЗЯТ {ev['home']} {ev['score_home']}:{ev['score_away']} {ev['away']}")
+
+    if not out and (candidates or attempts):
+        print(f"[ingest] pass2: 0 финалов из {attempts} проверок. Если кандидаты были — "
+              f"сверь field_map.event_url и работу режима eventUrls у актора.")
+    return out, matched_any
+
+
 # ---- актор-специфичные парсеры -------------------------------------------
-def _parse_sofascore_scheduled(raw, sport_cfg):
+def _parse_sofascore_scheduled(raw, sport_cfg, require_rowtype=True):
     """
-    Адаптер под maximedupre/sofascore-live-events-scraper (mode=scheduledEvents).
-    У актора верхний score и eventStatus НЕнадёжны; финал берём из incidents (FT).
-    Возвращает нормализованное событие или None (если матч ещё не сыгран).
+    Адаптер под maximedupre/sofascore-live-events-scraper.
+    Финал берём из incidents (FT) — они приходят только при includeMatchDetails=true.
+    require_rowtype: в проходе 2 (eventUrls) строка — это наш матч, rowType можно не требовать.
+    Возвращает нормализованное событие или None (если матч ещё не сыгран / нет данных).
     """
-    if raw.get("rowType") != "event":
+    if require_rowtype and raw.get("rowType") != "event":
         return None
     home = _get_path(raw, "homeTeam.name")
     away = _get_path(raw, "awayTeam.name")
@@ -242,11 +372,12 @@ def _parse_sofascore_scheduled(raw, sport_cfg):
 PARSERS = {"sofascore_scheduled": _parse_sofascore_scheduled}
 
 
-def ingest():
-    """Забрать завершённые матчи и upsert в стор. Возвращает список событий."""
+def ingest(limit=None):
+    """Забрать завершённые матчи и upsert в стор. Возвращает список событий.
+    limit — для two_pass: сколько новых матчей материализовать (детали тянем только по ним)."""
     sport_cfg = load_sport()
     source = os.environ.get("SOURCE", "sample")
-    events = _from_sample(sport_cfg) if source == "sample" else _from_apify(sport_cfg)
+    events = _from_sample(sport_cfg) if source == "sample" else _from_apify(sport_cfg, limit=limit)
 
     store = get_store()
     for ev in events:

@@ -36,22 +36,43 @@ sources:
   - name: sofascore
     actor_id: "maximedupre/sofascore-live-events-scraper"
     enabled: true
-    parser: sofascore_scheduled        # актор-специфичный адаптер (см. ingest.PARSERS)
-    timeout_secs: 600                   # лимит запуска актора (.call). Дефолт актора 300 ловил TIMED-OUT,
-                                        # т.к. includeMatchDetails дотягивает детали по каждому матчу. Можно
-                                        # переопределить env APIFY_TIMEOUT_SECS.
-    run_input:
-      mode: "scheduledEvents"          # единственный режим «по дате» у этого актора
+    parser: sofascore_scheduled        # адаптер для прохода 2 (см. ingest.PARSERS)
+    fetch_mode: two_pass               # two_pass (дёшево: детали только по нужному матчу) | single_pass
+    timeout_secs: 600                  # лимит запуска актора (.call). Можно env APIFY_TIMEOUT_SECS.
+    max_detail_lookups: 5              # сколько кандидатов максимум проверить в проходе 2 (защита от перебора)
+
+    # ПРОХОД 1 — список матчей за дату БЕЗ деталей (дёшево, не тянет incidents)
+    list_input:
+      mode: "scheduledEvents"
       sport: "football"
       date: "${MATCH_DATE}"            # ingest подставит дату(ы) по lookback_days
-      maxItems: 25                     # БЮДЖЕТ СКАНИРОВАНИЯ за дату (весь футбол), НЕ число постов.
-                                        # Меньше = быстрее/дешевле, но рискуешь не зацепить нужный матч,
-                                        # если в этот день много матчей других лиг (MLS/Brazil/Скандинавия летом).
-      includeMatchDetails: true        # ОБЯЗАТЕЛЬНО: без него актор не вернёт incidents ->
-                                        # парсер не увидит FT/счёт/голы -> 0 событий. Это же — основная
-                                        # нагрузка/время запуска (детали тянутся по каждому матчу).
-    # field_map/stat_map не нужны: парсер берёт счёт/статы из incidents (FT),
-    # т.к. верхний score и eventStatus у этого актора ненадёжны.
+      maxItems: 50                     # тут можно много — без деталей это дёшево/быстро
+      includeMatchDetails: false
+
+    # ПРОХОД 2 — детали ТОЛЬКО по выбранному матчу (через его URL)
+    detail_input:
+      mode: "eventUrls"               # режим «по URL матча»
+      sport: "football"
+      includeMatchDetails: true        # тут incidents нужны: из них FT/счёт/голы
+      maxItems: 1
+
+    # Пути полей в строке прохода 1. event_url — КЛЮЧЕВОЙ: URL матча для прохода 2.
+    # Сверь с реальным выводом актора (одна строка) и поправь при необходимости.
+    field_map:
+      match_id: "id"
+      home: "homeTeam.name"
+      away: "awayTeam.name"
+      league: "tournament.name"
+      finished_at: "startTimestamp"
+      event_url: "url"                 # если в выводе URL называется иначе — укажи тут
+
+    # Для отката на старое поведение (FETCH_MODE=single_pass или fetch_mode выше):
+    run_input:
+      mode: "scheduledEvents"
+      sport: "football"
+      date: "${MATCH_DATE}"
+      maxItems: 25
+      includeMatchDetails: true
 
   # --- Альтернативы / резерв (enabled:false) ---
   - name: sofascore_parseforge

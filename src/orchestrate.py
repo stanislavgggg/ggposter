@@ -45,13 +45,13 @@ def _select_new(events, store, limit):
 
 
 def run_once():
-    matches = ingest()
+    store = get_store()
+    limit = _events_per_run()
+    matches = ingest(limit=limit)         # two_pass материализует только нужные новые матчи
     news = ingest_news()
     enrich(matches)                       # опционально (ENRICH=true)
-    store = get_store()
 
     all_events = matches + news
-    limit = _events_per_run()
     events = _select_new(all_events, store, limit)
     print(f"[orchestrate] получено={len(all_events)} новых_к_обработке={len(events)} "
           f"(EVENTS_PER_RUN={limit or '∞'})")
