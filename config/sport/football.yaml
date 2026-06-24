@@ -33,9 +33,17 @@ key_stats: [shots, shots_on_target, possession, xg, top_scorer, red_cards]
 # ВАЖНО: пути ниже — под типичную структуру Sofascore; СВЕРЬ с реальным
 #        выводом актора (одна строка датасета) и поправь при необходимости.
 sources:
+  # ОСНОВНОЙ источник: публичный JSON ЧМ-2026 (без ключа, без лимитов, без скрапинга).
+  # Отдаёт сыгранные матчи со счётом и голеадорами -> «всегда находит».
+  - name: openfootball_wc
+    type: http
+    parser: openfootball_wc
+    url: "https://raw.githubusercontent.com/openfootball/worldcup.json/master/2026/worldcup.json"
+    enabled: true
+
   - name: sofascore
     actor_id: "maximedupre/sofascore-live-events-scraper"
-    enabled: true
+    enabled: false                     # резерв: скрапер нестабилен; включай если нужны live/детали
     parser: sofascore_scheduled        # адаптер для прохода 2 (см. ingest.PARSERS)
     fetch_mode: two_pass               # two_pass (дёшево: детали только по нужному матчу) | single_pass
     timeout_secs: 600                  # лимит запуска актора (.call). Можно env APIFY_TIMEOUT_SECS.

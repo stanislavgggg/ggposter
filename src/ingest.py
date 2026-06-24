@@ -77,11 +77,17 @@ def _is_finished(raw, src, status):
 
 
 def _league_matches(league, sport_cfg):
-    """Фильтр по интересующим турнирам (подстрока, регистронезависимо)."""
+    """Фильтр по интересующим турнирам (подстрока, регистронезависимо).
+
+    Если источник НЕ дал лигу (league пустой) — НЕ режем: иначе теряем всё
+    (напр. Sofascore-актор отдаёт tournament=null). Лучше пропустить, чем потерять.
+    """
     wanted = sport_cfg.get("leagues", [])
     if not wanted:
         return True
-    league = (league or "").lower()
+    if not league:
+        return True
+    league = league.lower()
     return any(w.lower() in league for w in wanted)
 
 
@@ -171,15 +177,28 @@ def _from_apify(sport_cfg, limit=None, store=None):
       single_pass — старое поведение: тянет детали по всем maxItems сразу.
     Переопределить можно env FETCH_MODE.
     """
-    from apify_client import ApifyClient  # lazy
-    client = ApifyClient(os.environ["APIFY_TOKEN"])
     store = store or get_store()
     out, seen, seen_leagues = [], set(), set()
     any_league_match = False
+    client = None  # создаём лениво, только если есть включённый apify-источник
 
     for src in sport_cfg.get("sources", []):
         if not src.get("enabled"):
             continue
+
+        # --- HTTP-источник (надёжный JSON API, без Apify/скрапинга) ---
+        if src.get("type") == "http":
+            evs, matched = _http_source(src, sport_cfg, seen)
+            out.extend(evs)
+            any_league_match = any_league_match or matched
+            if limit and len(out) >= limit:
+                break
+            continue
+
+        # --- Apify-источники ---
+        if client is None:
+            from apify_client import ApifyClient  # lazy: нужен только для apify-источников
+            client = ApifyClient(os.environ["APIFY_TOKEN"])
         mode = (os.environ.get("FETCH_MODE") or src.get("fetch_mode") or "single_pass").lower()
         if mode == "two_pass":
             evs, matched = _two_pass_source(src, sport_cfg, client, limit, store, seen, seen_leagues)
@@ -393,6 +412,81 @@ def _parse_sofascore_scheduled(raw, sport_cfg, require_rowtype=True):
 
 
 PARSERS = {"sofascore_scheduled": _parse_sofascore_scheduled}
+
+
+# ---- HTTP-источники (надёжный JSON, без Apify) ----------------------------
+def _http_source(src, sport_cfg, seen):
+    """Тянет JSON по URL и парсит сыгранные матчи. Возвращает (события, был_ли_матч_лиги)."""
+    import requests
+    parser = HTTP_PARSERS.get(src.get("parser"))
+    if not parser:
+        print(f"[ingest] http '{src.get('name')}' без parser — пропуск")
+        return [], False
+    try:
+        r = requests.get(src["url"], timeout=30)
+        r.raise_for_status()
+        data = r.json()
+    except Exception as e:
+        print(f"[ingest] http {src.get('url')} error: {e}")
+        return [], False
+
+    out, matched = [], False
+    for ev in parser(data, sport_cfg):
+        if ev["match_id"] in seen:
+            continue
+        if not _league_matches(ev.get("league"), sport_cfg):
+            continue
+        matched = True
+        seen.add(ev["match_id"])
+        out.append(ev)
+    print(f"[ingest] http '{src.get('name')}': сыгранных матчей={len(out)}")
+    return out, matched
+
+
+def _parse_openfootball_wc(data, sport_cfg):
+    """
+    openfootball/worldcup.json — публичный JSON ЧМ-2026 (без ключа/лимитов).
+    Сыгранный матч = есть score.ft (массив из 2). У источника нет id -> делаем
+    стабильный match_id из даты+команд (идемпотентность). Голеадоры -> key_stats.scorers.
+    """
+    import hashlib
+    league = data.get("name") or "World Cup 2026"
+    out = []
+    for m in data.get("matches", []):
+        sc = m.get("score") or {}
+        ft = sc.get("ft")
+        if not (isinstance(ft, list) and len(ft) == 2):
+            continue                                   # ещё не сыгран
+        home, away = m.get("team1"), m.get("team2")
+        if not home or not away:
+            continue
+        mid = "wc_" + hashlib.sha1(f"{m.get('date')}|{home}|{away}".encode()).hexdigest()[:12]
+        scorers = [g.get("name") for g in (m.get("goals1") or []) + (m.get("goals2") or [])
+                   if isinstance(g, dict) and g.get("name")]
+        key_stats = {}
+        if scorers:
+            key_stats["scorers"] = scorers
+        ht = sc.get("ht")
+        if isinstance(ht, list) and len(ht) == 2:
+            key_stats["halftime"] = f"{ht[0]}-{ht[1]}"
+        out.append({
+            "match_id": mid,
+            "type": "result",
+            "sport": sport_cfg["sport"],
+            "league": league,
+            "status": "finished",
+            "home": home,
+            "away": away,
+            "score_home": _to_int(ft[0]),
+            "score_away": _to_int(ft[1]),
+            "key_stats": key_stats,
+            "raw": m,
+            "finished_at": _to_iso(m.get("date")),
+        })
+    return out
+
+
+HTTP_PARSERS = {"openfootball_wc": _parse_openfootball_wc}
 
 
 def ingest(limit=None):
