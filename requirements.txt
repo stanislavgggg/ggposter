@@ -1,0 +1,6 @@
+anthropic>=0.40.0
+requests>=2.31.0
+PyYAML>=6.0
+# Прод (BigQuery store + Apify источник). Для STORE_BACKEND=local / SOURCE=sample не нужны:
+google-cloud-bigquery>=3.20.0
+apify-client>=1.7.0

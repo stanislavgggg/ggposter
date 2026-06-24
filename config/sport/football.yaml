@@ -1,0 +1,114 @@
+# ============================================================
+#  SPORT-CONFIG — Футбол (ЧМ-2026 в фокусе)
+#  Слой 4: добавить теннис/киберспорт = новый файл + актор,
+#  слои генерации и публикации не трогаешь.
+# ============================================================
+
+sport: football
+sport_emoji: "⚽"
+
+# --- Какие лиги/турниры отслеживаем (фильтр + триггер генерации) ---
+leagues:
+  - "FIFA World Cup"          # подстрока, матчится по league (tournament.name)
+
+# --- Триггер: пост генерируется, когда матч завершён ---
+trigger:
+  required_fields: [home, away, score_home, score_away]
+  # сколько дней назад тянуть (T-0 = сегодня, T-1 = вчера); ingest бьёт по датам
+  lookback_days: 1
+
+# --- Какие стат-поля важны (попадают в контекст промпта) ---
+# Промпт использует ТОЛЬКО реально пришедшие поля (защита от выдуманных цифр).
+key_stats: [shots, shots_on_target, possession, xg, top_scorer, red_cards]
+
+# --- Слой 1: источники (РЕАЛЬНЫЕ Apify-акторы) -------------------------------
+# ingest актор-агностичен: каждый источник описывает run_input + field_map.
+# Смена актора = правка этого блока, без правки кода.
+#
+# ${MATCH_DATE} ingest подставляет автоматически (YYYY-MM-DD по lookback_days).
+# field_map / stat_map используют dot-path по выходному JSON актора.
+# ВАЖНО: пути ниже — под типичную структуру Sofascore; СВЕРЬ с реальным
+#        выводом актора (одна строка датасета) и поправь при необходимости.
+sources:
+  - name: sofascore
+    actor_id: "maximedupre/sofascore-live-events-scraper"   # by-date, finished results, MCP-ready (~$0.90/1k)
+    enabled: true
+    run_input:
+      job: "finished"           # режим завершённых результатов
+      sport: "football"
+      date: "${MATCH_DATE}"
+    finished_values: ["finished", "ended", "AET", "AP"]      # status.type, означающие «матч сыгран»
+    field_map:
+      match_id:    "id"
+      home:        "homeTeam.name"
+      away:        "awayTeam.name"
+      score_home:  "homeScore.current"
+      score_away:  "awayScore.current"
+      status:      "status.type"
+      league:      "tournament.name"
+      finished_at: "startTimestamp"          # unix; ingest конвертит в iso
+    stat_map:
+      shots:           "statistics.shots.total"
+      shots_on_target: "statistics.shots.onTarget"
+      possession:      "statistics.possession"
+      xg:              "statistics.xg"
+      top_scorer:      "topScorer"
+      red_cards:       "statistics.redCards"
+
+  # --- Альтернативы / резерв (enabled:false) ---
+  - name: sofascore_parseforge
+    actor_id: "parseforge/sofascore-live-scraper"
+    enabled: false
+    run_input: { mode: "events", sport: "football", date: "${MATCH_DATE}" }
+    finished_values: ["finished", "ended"]
+    field_map:
+      match_id: "id"
+      home: "homeTeam.name"
+      away: "awayTeam.name"
+      score_home: "homeScore.current"
+      score_away: "awayScore.current"
+      status: "status.description"
+      league: "tournament.name"
+      finished_at: "startTimestamp"
+    stat_map: {}
+
+  - name: openligadb_wc            # явно покрывает FIFA World Cup + голеадоры
+    actor_id: "parseforge/openligadb-football-matches-scraper"
+    enabled: false
+    run_input: { mode: "matches", league: "FIFA World Cup", season: "2026" }
+    finished_values: ["finished"]
+    field_map:
+      match_id: "matchID"
+      home: "team1.teamName"
+      away: "team2.teamName"
+      score_home: "matchResults.pointsTeam1"
+      score_away: "matchResults.pointsTeam2"
+      status: "matchIsFinished"
+      league: "leagueName"
+      finished_at: "matchDateTimeUTC"
+    stat_map: { top_scorer: "goals" }
+
+  - name: flashscore
+    actor_id: "statanow/flashscore-scraper-live"
+    enabled: false
+    run_input: { sport: "football", dayOffsets: ["0", "-1"] }
+    finished_values: ["finished", "FT"]
+    field_map:
+      match_id: "matchId"
+      home: "home"
+      away: "away"
+      score_home: "homeScore"
+      score_away: "awayScore"
+      status: "status"
+      league: "league"
+      finished_at: "startTime"
+    stat_map: {}
+
+# --- xG-обогащение (опционально, отдельный шаг) ---
+#   parseforge/fbref-scraper  |  mirthful_radish/understat-xg-football-scraper
+
+angle_hints:
+  - "Неожиданный результат / апсет"
+  - "Крупный счёт / разгром"
+  - "Индивидуальный перформанс (хет-трик, дубль, ассисты)"
+  - "Контраст с котировками до матча"

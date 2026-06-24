@@ -1,0 +1,6 @@
+{
+  "_comment": "Тестовые метрики per subid (tg_<geo>_<draft_id>). В проде METRICS_BACKEND=bigquery.",
+  "tg_lt_demoHookWin": {"clicks": 140, "ftd": 12},
+  "tg_lt_demoHookMid": {"clicks": 90,  "ftd": 3},
+  "tg_lt_demoHookLose": {"clicks": 60, "ftd": 0}
+}

@@ -1,0 +1,30 @@
+# GEO-CONFIG — Польша (PL)
+geo: pl
+country_name: Poland
+language: pl
+language_name: Polish
+timezone: Europe/Warsaw
+tone: >
+  Direct, value-focused Polish. Football-strong. Speak plainly, no fluff.
+  Lead with the hook (result / stat), never the brand. Scannable.
+local_context:
+  primary_sports: [football]
+  football_angle: >
+    Football-first market. Lean into match drama, standout numbers, upsets,
+    tied to a betting/prediction angle.
+  cultural_notes:
+    - "Ekstraklasa + national team resonate; PL gambling rules are strict — keep compliant."
+telegram:
+  public_channel_id: "${PL_CHANNEL_ID}"
+  pin_offer: true
+offer:
+  brand: "${PL_BRAND}"
+  affiliate_url: "${PL_AFFILIATE_URL}"
+  subid_param: "subid"
+  promo_code: "${PL_PROMO_CODE}"
+  bonus_line: "Dla nowych graczy: sprawdź aktualną promocję"
+compliance:
+  min_age: 18
+  must_include: ["Wyraźne oznaczenie 18+", "Przypomnienie o odpowiedzialnej grze", "Link do regulaminu / T&C"]
+  forbidden: ["Sformułowania o gwarantowanej wygranej", "Obietnice zysku", "Zmyślone liczby / statystyki"]
+  responsible_gambling_line: "18+ | Graj odpowiedzialnie | sieć wsparcia"

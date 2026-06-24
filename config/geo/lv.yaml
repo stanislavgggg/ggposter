@@ -1,0 +1,30 @@
+# GEO-CONFIG — Латвия (LV)
+geo: lv
+country_name: Latvia
+language: lv
+language_name: Latvian
+timezone: Europe/Riga
+tone: >
+  Tight-knit, niche-savvy Latvian. Speak to a small, sharp betting crowd.
+  Lead with the hook (result / stat), never the brand. No over-formality.
+local_context:
+  primary_sports: [hockey, basketball, football]
+  football_angle: >
+    Latvia is hockey/basketball-first. Frame WC football as a value-betting /
+    neutral-fan angle: standout numbers, upsets, individual performances.
+  cultural_notes:
+    - "Hockey is the emotional core — football posts must earn attention with the story/number."
+telegram:
+  public_channel_id: "${LV_CHANNEL_ID}"
+  pin_offer: true
+offer:
+  brand: "${LV_BRAND}"
+  affiliate_url: "${LV_AFFILIATE_URL}"
+  subid_param: "subid"
+  promo_code: "${LV_PROMO_CODE}"
+  bonus_line: "Jaunajiem spēlētājiem: 100% līdz 100€ + bezmaksas griezieni"
+compliance:
+  min_age: 18
+  must_include: ["Skaidrs 18+ marķējums", "Atbildīgas spēles atgādinājums", "Saite uz noteikumiem / T&C"]
+  forbidden: ["Garantēta laimesta formulējumi", "Solījumi par peļņu", "Izdomāti skaitļi / statistika"]
+  responsible_gambling_line: "18+ | Spēlē atbildīgi | Palīdzība: atbalsta tīkls"

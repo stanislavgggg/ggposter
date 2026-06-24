@@ -1,0 +1,16 @@
+{
+  "match_id": "wc2026-esp-cro-0613",
+  "league": "FIFA World Cup 2026",
+  "status": "finished",
+  "home": "Spain",
+  "away": "Croatia",
+  "score_home": 3,
+  "score_away": 1,
+  "shots": 17,
+  "shots_on_target": 8,
+  "possession": "63%",
+  "xg": "2.7",
+  "top_scorer": "Lamine Yamal (2)",
+  "red_cards": 0,
+  "finished_at": "2026-06-13T21:45:00Z"
+}

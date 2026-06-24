@@ -1,0 +1,54 @@
+# ============================================================
+#  GEO-CONFIG — Литва (LT)
+#  Слой 4: всё, что меняется от гео к гео, лежит здесь.
+#  Масштаб с 1 до N гео = добавить файл config/geo/<geo>.yaml.
+# ============================================================
+
+geo: lt
+country_name: Lithuania
+language: lt                 # язык ГЕНЕРАЦИИ (промпт пишет на нём)
+language_name: Lithuanian
+timezone: Europe/Vilnius
+
+# --- Голос канала / тон (из iGaming-фреймворка по LT) ---
+tone: >
+  Casual, community-driven Lithuanian. Like a knowledgeable mate in the chat,
+  not a corporate broadcaster. Local pride around the national team.
+  Lead with the hook (result / key stat / odds), never with the brand name.
+
+# --- Локальный спортивный контекст для транскреации ---
+local_context:
+  primary_sports: [basketball, football]
+  football_angle: >
+    Lithuania is not at the World Cup, so frame WC content as a neutral fan /
+    value-betting angle: standout performances, surprise results, big numbers.
+    Tie to the act of betting/predicting, not to national-team patriotism.
+  cultural_notes:
+    - "Basketball is the #1 sport — football posts should earn attention with the stat/story, not assume football fandom."
+    - "Avoid over-formal Lithuanian; the channel reads casual."
+
+# --- Telegram ---
+telegram:
+  public_channel_id: "${LT_CHANNEL_ID}"     # @канал или -100... id публичного канала
+  pin_offer: true
+
+# --- Оффер / партнёрка (то, к чему ведёт CTA) ---
+offer:
+  brand: "${LT_BRAND}"                       # бренд оператора
+  affiliate_url: "${LT_AFFILIATE_URL}"       # трекинг-ссылка (subid допишется автоматически)
+  subid_param: "subid"                       # имя параметра под per-post subid (tg_<geo>_<draft_id>)
+  promo_code: "${LT_PROMO_CODE}"
+  bonus_line: "Naujiems žaidėjams: 100% iki 100€ + nemokami sukimai"   # пример; правится под актуальный оффер
+
+# --- Комплаенс (ЖЁСТКИЕ правила, прокидываются в промпт и в self-check) ---
+compliance:
+  min_age: 18
+  must_include:
+    - "Aiškus 18+ žymėjimas"                 # 18+
+    - "Atsakingo žaidimo priminimas"          # responsible gambling
+    - "Nuoroda į taisykles / T&C"             # bonus T&Cs reference
+  forbidden:
+    - "Garantuoto laimėjimo formuluotės"      # никаких "гарантированный выигрыш"
+    - "Pažadai apie pelną"                    # никаких обещаний прибыли
+    - "Pramanyti skaičiai / statistika"       # никаких выдуманных цифр (ключевая боль)
+  responsible_gambling_line: "18+ | Žaisk atsakingai | Pagalba: tinklas pagalbai"

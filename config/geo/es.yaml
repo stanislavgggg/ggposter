@@ -1,0 +1,31 @@
+# GEO-CONFIG — Испания (ES)
+geo: es
+country_name: Spain
+language: es
+language_name: Spanish
+timezone: Europe/Madrid
+tone: >
+  High-energy, fan-culture Spanish. Football is religion. Passion + banter.
+  Lead with the hook (result / key stat), never the brand. Punchy, scannable.
+local_context:
+  primary_sports: [football, tennis, basketball]
+  football_angle: >
+    Football-mad market. Lean into the match drama, star players, big numbers,
+    and rivalries. Tie emotion to a betting/prediction angle.
+  cultural_notes:
+    - "La Liga fan culture — references to big clubs/players land well."
+    - "Strict gambling-ad rules in ES: keep promos compliant, no aggressive bonus pushing."
+telegram:
+  public_channel_id: "${ES_CHANNEL_ID}"
+  pin_offer: true
+offer:
+  brand: "${ES_BRAND}"
+  affiliate_url: "${ES_AFFILIATE_URL}"
+  subid_param: "subid"
+  promo_code: "${ES_PROMO_CODE}"
+  bonus_line: "Para nuevos jugadores: consulta la promoción vigente"
+compliance:
+  min_age: 18
+  must_include: ["Marca clara 18+", "Recordatorio de juego responsable", "Enlace a términos / T&C"]
+  forbidden: ["Promesas de ganancia garantizada", "Promesas de beneficio", "Cifras / estadísticas inventadas", "Publicidad agresiva de bonos (DGOJ)"]
+  responsible_gambling_line: "18+ | Juega con responsabilidad | jugarbien.es"

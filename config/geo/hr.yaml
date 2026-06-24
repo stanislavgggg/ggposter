@@ -1,0 +1,30 @@
+# GEO-CONFIG — Хорватия (HR)
+geo: hr
+country_name: Croatia
+language: hr
+language_name: Croatian
+timezone: Europe/Zagreb
+tone: >
+  Passionate, local-pride Croatian. Football is huge; national-team pride is real.
+  Lead with the hook (result / stat), never the brand. Bold and emotional.
+local_context:
+  primary_sports: [football, basketball]
+  football_angle: >
+    Football-first, strong national-team identity. WC content can lean into
+    pride and rivalry, tied to a betting/prediction angle.
+  cultural_notes:
+    - "HNL clubs (Dinamo, Hajduk, Rijeka) and the national team resonate strongly."
+telegram:
+  public_channel_id: "${HR_CHANNEL_ID}"
+  pin_offer: true
+offer:
+  brand: "${HR_BRAND}"
+  affiliate_url: "${HR_AFFILIATE_URL}"
+  subid_param: "subid"
+  promo_code: "${HR_PROMO_CODE}"
+  bonus_line: "Za nove igrače: 100% do 100€ + besplatni spinovi"
+compliance:
+  min_age: 18
+  must_include: ["Jasna oznaka 18+", "Podsjetnik o odgovornom igranju", "Poveznica na uvjete / T&C"]
+  forbidden: ["Formulacije o zajamčenom dobitku", "Obećanja o profitu", "Izmišljeni brojevi / statistika"]
+  responsible_gambling_line: "18+ | Igraj odgovorno | mreža za podršku"
