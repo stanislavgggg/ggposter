@@ -48,6 +48,7 @@ sources:
       date: "${MATCH_DATE}"            # ingest подставит дату(ы) по lookback_days
       maxItems: 50                     # тут можно много — без деталей это дёшево/быстро
       includeMatchDetails: false
+      statusFilter: "all"              # без этого актор возвращает пустой результат
 
     # ПРОХОД 2 — детали ТОЛЬКО по выбранному матчу (через его URL)
     detail_input:
@@ -73,6 +74,7 @@ sources:
       date: "${MATCH_DATE}"
       maxItems: 25
       includeMatchDetails: true
+      statusFilter: "all"
 
   # --- Альтернативы / резерв (enabled:false) ---
   - name: sofascore_parseforge
