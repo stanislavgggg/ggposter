@@ -9,7 +9,7 @@ import os
 import re
 
 from .config import load_sport
-from .ingest import _get_path
+from .ingest import _get_path, _dataset_id
 from .store import get_store
 
 
@@ -24,7 +24,7 @@ def _fetch_xg_map(enr):
     fm = enr.get("field_map", {})
     run = client.actor(enr["actor_id"]).call(run_input=enr.get("run_input", {}))
     table = {}
-    for item in client.dataset(run["defaultDatasetId"]).iterate_items():
+    for item in client.dataset(_dataset_id(run)).iterate_items():
         team = _get_path(item, fm.get("team", "team"))
         if not team:
             continue

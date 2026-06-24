@@ -125,8 +125,12 @@ class AirtableBridge:
                 geo = load_geo(draft["geo"])
                 dests = _resolve_dests(geo, f.get("Channels"))
                 if not dests:
-                    # каналы не выбраны -> не публикуем и НЕ помечаем Processed (менеджер дозаполнит)
-                    print(f"[airtable] {draft_id}: укажи Channels (доступно: {_dest_hint(draft['geo'])})")
+                    # каналы не выбраны -> не публикуем и НЕ помечаем Processed (менеджер дозаполнит).
+                    # Подсказку пишем в грид (а не только в лог), без повторной записи.
+                    hint = f"⚠ укажи Channels: {_dest_hint(draft['geo'])}"
+                    if f.get("Published link") != hint:
+                        self.at.update(rec["id"], {"Published link": hint})
+                        print(f"[airtable] {draft_id}: {hint}")
                     continue
                 for d in dests:
                     deliver(draft_id, dest=d)
