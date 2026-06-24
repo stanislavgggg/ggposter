@@ -18,6 +18,29 @@ from .config import load_sport, ROOT
 from .store import get_store
 
 
+# ---- совместимость apify-client 1.x / 3.x ---------------------------------
+def _actor_call(actor_client, run_input, timeout_secs):
+    """Запуск актора с правильным аргументом таймаута для любой версии клиента.
+
+    apify-client 3.x: timeout_secs → run_timeout=timedelta(seconds=...)
+    apify-client 1.x: timeout_secs=int
+    fallback:         запуск без таймаута + WARNING в лог
+    """
+    import inspect
+    sig = inspect.signature(actor_client.call)
+    if "run_timeout" in sig.parameters:
+        # apify-client >= 3.0
+        return actor_client.call(run_input=run_input,
+                                 run_timeout=timedelta(seconds=timeout_secs))
+    elif "timeout_secs" in sig.parameters:
+        # apify-client 1.x
+        return actor_client.call(run_input=run_input, timeout_secs=timeout_secs)
+    else:
+        print(f"[ingest] WARNING: ActorClient.call() не поддерживает таймаут "
+              f"(неизвестная версия apify-client) — запускаем без него")
+        return actor_client.call(run_input=run_input)
+
+
 # ---- утилиты --------------------------------------------------------------
 def _get_path(obj, path):
     """Достать значение по dot-path 'a.b.c' из вложенного dict. None если нет."""
@@ -184,7 +207,7 @@ def _single_pass_source(src, sport_cfg, client, seen, seen_leagues):
     out, matched_any = [], False
     for d in dates:
         run_input = _fill_input(run_input_cfg, d) if d else run_input_cfg
-        run = client.actor(src["actor_id"]).call(run_input=run_input, timeout_secs=timeout)
+        run = _actor_call(client.actor(src["actor_id"]), run_input=run_input, timeout_secs=timeout)
         status = _run_status(run)
         if status and str(status).upper() != "SUCCEEDED":
             print(f"[ingest] WARN {src['actor_id']} date={d} status={status} "
@@ -262,7 +285,7 @@ def _two_pass_source(src, sport_cfg, client, limit, store, seen, seen_leagues):
     candidates, cids, matched_any = [], set(), False
     for d in dates:
         ri = _fill_input(list_input, d) if d else list_input
-        run = client.actor(src["actor_id"]).call(run_input=ri, timeout_secs=timeout)
+        run = _actor_call(client.actor(src["actor_id"]), run_input=ri, timeout_secs=timeout)
         st = _run_status(run)
         if st and str(st).upper() != "SUCCEEDED":
             print(f"[ingest] WARN pass1 {src['actor_id']} date={d} status={st}")
@@ -296,7 +319,7 @@ def _two_pass_source(src, sport_cfg, client, limit, store, seen, seen_leagues):
             continue
         attempts += 1
         di = dict(detail_input); di["startUrls"] = [c["url"]]
-        run = client.actor(src["actor_id"]).call(run_input=di, timeout_secs=timeout)
+        run = _actor_call(client.actor(src["actor_id"]), run_input=di, timeout_secs=timeout)
         ev = None
         for row in client.dataset(_dataset_id(run)).iterate_items():
             ev = _parse_sofascore_scheduled(row, sport_cfg, require_rowtype=False)
