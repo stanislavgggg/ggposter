@@ -91,6 +91,13 @@ class LocalJsonStore:
                 and dr.get("subid")
                 and (geo is None or dr.get("geo") == geo)]
 
+    def list_decided(self, geo=None, kind=None):
+        d = self._read()
+        return [dr for dr in d["drafts"].values()
+                if dr.get("status") in ("approved", "published", "rejected")
+                and (geo is None or dr.get("geo") == geo)
+                and (kind is None or dr.get("kind") == kind)]
+
 
 # ----------------------------------------------------------------------
 #  BIGQUERY BACKEND  (production)
@@ -201,6 +208,15 @@ class BigQueryStore:
         if geo:
             sql += " AND geo=@g"
             params.append(self._p("g", "STRING", geo))
+        return [dict(r) for r in self._q(sql, params)]
+
+    def list_decided(self, geo=None, kind=None):
+        sql = f"SELECT * FROM {self.drafts} WHERE status IN ('approved','published','rejected')"
+        params = []
+        if geo:
+            sql += " AND geo=@g"; params.append(self._p("g", "STRING", geo))
+        if kind:
+            sql += " AND kind=@k"; params.append(self._p("k", "STRING", kind))
         return [dict(r) for r in self._q(sql, params)]
 
 
