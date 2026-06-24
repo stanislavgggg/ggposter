@@ -56,12 +56,44 @@ class ApprovalBot:
 
     def push_pending(self):
         for draft in self.store.get_pending_unnotified():
+            try:
+                if draft.get("kind", "telegram") == "email":
+                    self._push_email(draft)
+                else:
+                    self._push_telegram(draft)
+                self.store.update_draft(draft["draft_id"], notified=True)
+            except Exception as e:
+                print("push error for", draft.get("draft_id"), ":", e)
+
+    def _push_email(self, draft):
+        msg = self.tg.send_message(
+            ADMIN_CHAT_ID, _preview(draft),
+            reply_markup=_buttons(draft["draft_id"], "email"),
+        )
+        self.msg_to_draft[msg["message_id"]] = draft["draft_id"]
+
+    def _push_telegram(self, draft):
+        """Шапка + каждый вариант ОТДЕЛЬНЫМ чистым сообщением (удобно копировать)."""
+        did = draft["draft_id"]
+        flag = "✅" if draft.get("compliance_ok") else "⚠️"
+        notes = "" if draft.get("compliance_ok") else f"\n⚠️ {draft.get('compliance_notes', '')}"
+        header = (f"🆕 Черновик {did} · GEO={draft['geo']} · комплаенс {flag}{notes}\n"
+                  f"{draft.get('hook_rationale', '')}")
+        self.tg.send_message(ADMIN_CHAT_ID, header, parse_mode=None)
+
+        for variant in ("A", "B"):
+            text = draft.get("post_a") if variant == "A" else draft.get("post_b")
+            if not text:
+                continue
+            # raw текст (parse_mode=None) -> копируется чисто, без HTML-мусора
             msg = self.tg.send_message(
-                ADMIN_CHAT_ID, _preview(draft),
-                reply_markup=_buttons(draft["draft_id"], draft.get("kind", "telegram")),
+                ADMIN_CHAT_ID, text, parse_mode=None,
+                reply_markup=inline_keyboard([
+                    [(f"✅ Опубликовать {variant}", f"ap:{variant}:{did}")],
+                    [("❌ Отклонить", f"rj:{did}")],
+                ]),
             )
-            self.store.update_draft(draft["draft_id"], notified=True)
-            self.msg_to_draft[msg["message_id"]] = draft["draft_id"]
+            self.msg_to_draft[msg["message_id"]] = did
 
     def handle_callback(self, cq):
         data = cq["data"]
