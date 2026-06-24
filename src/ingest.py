@@ -131,24 +131,83 @@ def _from_apify(sport_cfg):
     for src in sport_cfg.get("sources", []):
         if not src.get("enabled"):
             continue
+        parser = PARSERS.get(src.get("parser"))      # актор-специфичный адаптер, если задан
         dates = _target_dates(sport_cfg) if "${MATCH_DATE}" in json.dumps(src.get("run_input", {})) else [None]
         for d in dates:
             run_input = _fill_input(src.get("run_input", {}), d) if d else src.get("run_input", {})
             run = client.actor(src["actor_id"]).call(run_input=run_input)
             for item in client.dataset(run["defaultDatasetId"]).iterate_items():
-                ev = _normalize(item, src, sport_cfg)
-                if ev["match_id"] in seen:
-                    continue
-                if not _is_finished(item, src, ev["status"]):
-                    continue
-                if not _league_matches(ev["league"], sport_cfg):
-                    continue
-                if any(ev.get(rf) is None for rf in req):
-                    continue
+                if parser:
+                    ev = parser(item, sport_cfg)     # сам решает finished/нет (None=пропустить)
+                    if ev is None or ev["match_id"] in seen:
+                        continue
+                else:
+                    ev = _normalize(item, src, sport_cfg)
+                    if ev["match_id"] in seen:
+                        continue
+                    if not _is_finished(item, src, ev["status"]):
+                        continue
+                    if not _league_matches(ev["league"], sport_cfg):
+                        continue
+                    if any(ev.get(rf) is None for rf in req):
+                        continue
+                    ev["type"] = "result"
                 seen.add(ev["match_id"])
-                ev["type"] = "result"
                 out.append(ev)
     return out
+
+
+# ---- актор-специфичные парсеры -------------------------------------------
+def _parse_sofascore_scheduled(raw, sport_cfg):
+    """
+    Адаптер под maximedupre/sofascore-live-events-scraper (mode=scheduledEvents).
+    У актора верхний score и eventStatus НЕнадёжны; финал берём из incidents (FT).
+    Возвращает нормализованное событие или None (если матч ещё не сыгран).
+    """
+    if raw.get("rowType") != "event":
+        return None
+    home = _get_path(raw, "homeTeam.name")
+    away = _get_path(raw, "awayTeam.name")
+    if not home or not away:
+        return None
+
+    incidents = raw.get("incidents") or []
+    ft = next((i for i in incidents
+               if i.get("text") == "FT" and i.get("incidentType") == "period"), None)
+    if not ft:
+        return None                                   # нет FT -> матч не сыгран, пропускаем
+
+    # статы из инцидентов (только то, что реально есть)
+    key_stats = {}
+    reds = sum(1 for i in incidents
+               if i.get("incidentType") == "card" and str(i.get("incidentClass")).lower() in ("red", "redcard"))
+    if reds:
+        key_stats["red_cards"] = reds
+    scorers = [i.get("playerName") for i in incidents
+               if i.get("incidentType") == "goal" and i.get("playerName")]
+    if scorers:
+        key_stats["scorers"] = scorers
+
+    tournament = raw.get("tournament")
+    league = tournament.get("name") if isinstance(tournament, dict) else (tournament or None)
+
+    return {
+        "match_id": str(raw.get("id")),
+        "type": "result",
+        "sport": sport_cfg["sport"],
+        "league": league,                             # может быть None — это ок
+        "status": "finished",
+        "home": home,
+        "away": away,
+        "score_home": _to_int(ft.get("homeScore")),
+        "score_away": _to_int(ft.get("awayScore")),
+        "key_stats": key_stats,
+        "raw": raw,
+        "finished_at": _to_iso(raw.get("startTimestamp") or raw.get("startDate") or raw.get("scrapedAt")),
+    }
+
+
+PARSERS = {"sofascore_scheduled": _parse_sofascore_scheduled}
 
 
 def ingest():

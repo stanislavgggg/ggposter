@@ -31,29 +31,16 @@ key_stats: [shots, shots_on_target, possession, xg, top_scorer, red_cards]
 #        выводом актора (одна строка датасета) и поправь при необходимости.
 sources:
   - name: sofascore
-    actor_id: "maximedupre/sofascore-live-events-scraper"   # by-date, finished results, MCP-ready (~$0.90/1k)
+    actor_id: "maximedupre/sofascore-live-events-scraper"
     enabled: true
+    parser: sofascore_scheduled        # актор-специфичный адаптер (см. ingest.PARSERS)
     run_input:
-      job: "finished"           # режим завершённых результатов
+      mode: "scheduledEvents"          # единственный режим «по дате» у этого актора
       sport: "football"
-      date: "${MATCH_DATE}"
-    finished_values: ["finished", "ended", "AET", "AP"]      # status.type, означающие «матч сыгран»
-    field_map:
-      match_id:    "id"
-      home:        "homeTeam.name"
-      away:        "awayTeam.name"
-      score_home:  "homeScore.current"
-      score_away:  "awayScore.current"
-      status:      "status.type"
-      league:      "tournament.name"
-      finished_at: "startTimestamp"          # unix; ingest конвертит в iso
-    stat_map:
-      shots:           "statistics.shots.total"
-      shots_on_target: "statistics.shots.onTarget"
-      possession:      "statistics.possession"
-      xg:              "statistics.xg"
-      top_scorer:      "topScorer"
-      red_cards:       "statistics.redCards"
+      date: "${MATCH_DATE}"            # ingest подставит дату(ы) по lookback_days
+      maxItems: 30
+    # field_map/stat_map не нужны: парсер берёт счёт/статы из incidents (FT),
+    # т.к. верхний score и eventStatus у этого актора ненадёжны.
 
   # --- Альтернативы / резерв (enabled:false) ---
   - name: sofascore_parseforge
