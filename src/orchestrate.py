@@ -10,6 +10,7 @@ GEO из env GEOS="lt,lv,es" либо PILOT_GEO.
 """
 import os
 
+from . import _bootstrap  # noqa: F401  — env→файл GCP-креды; ДОЛЖЕН идти первым
 from .ingest import ingest, ingest_news
 from .enrich import enrich
 from .generate import generate_for_events

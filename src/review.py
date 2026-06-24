@@ -7,6 +7,9 @@
 """
 import os
 
+from . import _bootstrap  # noqa: F401  — env→файл GCP-креды; ДОЛЖЕН идти первым
+
+
 def main():
     surface = os.environ.get("REVIEW_SURFACE", "telegram").lower()
     if surface == "airtable":
