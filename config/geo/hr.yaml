@@ -15,8 +15,33 @@ local_context:
   cultural_notes:
     - "HNL clubs (Dinamo, Hajduk, Rijeka) and the national team resonate strongly."
 telegram:
-  public_channel_id: "${HR_CHANNEL_ID}"
+  # Несколько назначений на гео: канал(ы) + паблик(и). Менеджер сам выбирает, куда постить
+  # (авторассылки нет). Невыставленные ${ENV} автоматически отбрасываются — можно оставить один.
+  destinations:
+    - id: "${HR_CHANNEL_ID}"          # основной канал
+      label: "HR канал"
+    - id: "${HR_PUBLIC_ID}"           # паблик/группа (опц.; не задан -> игнорируется)
+      label: "HR паблик"
   pin_offer: true
+
+# Email-выход (как в образце письма: личное сообщение от «Zlatan» с пиком + бонусом).
+# По умолчанию HR постит только в Telegram. Чтобы включить письма — добавь сверху:
+#   outputs: [telegram, email]
+# и заполни ${HR_MC_*} в .env.
+email:
+  audiences: [warm]
+  sender_persona: "Zlatan"
+  sign_off: "Želimo vam i dalje puno uspjeha,\nZlatan"
+  warm:
+    list_id: "${HR_MC_LIST_ID}"
+    segment_id: "${HR_MC_WARM_SEGMENT}"
+    from_name: "${HR_MC_FROM_NAME}"
+    reply_to: "${HR_MC_REPLY_TO}"
+  cold:
+    list_id: "${HR_MC_LIST_ID}"
+    segment_id: "${HR_MC_COLD_SEGMENT}"
+    from_name: "${HR_MC_FROM_NAME}"
+    reply_to: "${HR_MC_REPLY_TO}"
 offer:
   brand: "${HR_BRAND}"
   affiliate_url: "${HR_AFFILIATE_URL}"

@@ -15,7 +15,13 @@ local_context:
   cultural_notes:
     - "Ekstraklasa + national team resonate; PL gambling rules are strict — keep compliant."
 telegram:
-  public_channel_id: "${PL_CHANNEL_ID}"
+  # Несколько назначений на гео: канал(ы) + паблик(и). Менеджер сам выбирает, куда постить
+  # (авторассылки нет). Невыставленные ${ENV} автоматически отбрасываются — можно оставить один.
+  destinations:
+    - id: "${PL_CHANNEL_ID}"          # основной канал
+      label: "PL канал"
+    - id: "${PL_PUBLIC_ID}"           # паблик/группа (опц.; не задан -> игнорируется)
+      label: "PL паблик"
   pin_offer: true
 offer:
   brand: "${PL_BRAND}"

@@ -46,6 +46,8 @@ CREATE TABLE IF NOT EXISTS `<DATASET>.post_drafts` (
   subid               STRING,            -- per-post метка трекинга (tg_<geo>_<draft_id>)
   hook                STRING,            -- первая строка опубликованного текста (для петли обучения)
   published_text      STRING,            -- финальный текст с подставленной ссылкой
+  published_to        STRING,            -- JSON: список назначений, куда реально опубликовано (канал/паблик + msg_id + subid + link)
+  published_links     STRING,            -- готовые ссылки на посты (через запятую) для writeback в Airtable
   airtable_record_id  STRING,            -- id записи в Airtable (если ревью через Airtable)
   created_at          TIMESTAMP,
   decided_at          TIMESTAMP,

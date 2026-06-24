@@ -166,7 +166,7 @@ class BigQueryStore:
         "compliance_ok", "compliance_notes", "claude_model", "notified",
         "subid", "hook", "published_text", "airtable_record_id",
         "audience", "subject_a", "subject_b", "preview_text", "body_html",
-        "edited_subject", "esp_campaign_id",
+        "edited_subject", "esp_campaign_id", "published_to", "published_links",
     }
 
     def save_draft(self, draft):

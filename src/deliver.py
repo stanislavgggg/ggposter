@@ -11,7 +11,7 @@ from urllib.parse import urlencode
 
 from .store import get_store
 from .config import load_geo
-from .publish import publish_draft        # telegram
+from .publish import publish_to_destination   # telegram
 from .esp import get_esp
 
 
@@ -41,7 +41,10 @@ def send_email_draft(draft_id):
     html = html.replace("{{PROMO_CODE}}", offer.get("promo_code", ""))
 
     audience = draft.get("audience", "warm")
-    audience_cfg = email_cfg.get(audience, email_cfg.get("warm", {}))
+    audience_cfg = dict(email_cfg.get(audience, email_cfg.get("warm", {})))
+    # имя отправителя: явное из конфига -> иначе персона письма (как «Zlatan»)
+    if not audience_cfg.get("from_name") and email_cfg.get("sender_persona"):
+        audience_cfg["from_name"] = email_cfg["sender_persona"]
 
     res = get_esp().send(subject=subject, preview_text=draft.get("preview_text", ""),
                          html=html, audience_cfg=audience_cfg, subid=subid)
@@ -53,9 +56,12 @@ def send_email_draft(draft_id):
     return subid
 
 
-def deliver(draft_id, tg=None):
-    """Доставить черновик по его kind."""
+def deliver(draft_id, tg=None, dest=None):
+    """Доставить черновик по его kind.
+    email   -> рассылка через ESP (назначение задаётся аудиторией в конфиге).
+    telegram-> публикация в ОДНО назначение dest (канал/паблик).
+               dest обязателен, если назначений несколько (авторассылки нет)."""
     draft = get_store().get_draft(draft_id)
     if draft and draft.get("kind") == "email":
         return send_email_draft(draft_id)
-    return publish_draft(draft_id, tg=tg)
+    return publish_to_destination(draft_id, dest=dest, tg=tg)

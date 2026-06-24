@@ -63,7 +63,9 @@
    - `Edited text` (long text)
    - `Status` (**single select**: `Pending`, `Approved`, `Rejected`)
    - `Processed` (**checkbox**)
-   - `Published link` (url)
+   - `Channel` (text) — ПОДСКАЗКА: бот сам впишет доступные назначения гео
+   - `Channels` (text) — ВЫБОР менеджера: куда постить (метки через запятую, либо «все»). Пусто = пост не уходит (нет авторассылки)
+   - `Published link` (text)
 3. Получи доступ: **Account → Developer hub → Personal access tokens** → Create. Дай права (scopes) `data.records:read` и `data.records:write` и доступ к своей базе.
 4. Узнай **Base ID**: открой базу, в адресе она начинается на `app...` — это он.
 5. В `.env`:
@@ -72,7 +74,7 @@
    - `AIRTABLE_BASE_ID=app...`
    - `AIRTABLE_TABLE=Drafts`
 
-**Как пользоваться:** черновики сами появляются строками со `Status=Pending`. Менеджер ставит `Variant` (A/B) или пишет свой текст в `Edited text`, меняет `Status` на **Approved** → пост уходит в канал, в `Published link` падает ссылка. `chat_id` при этом **не нужен**.
+**Как пользоваться:** черновики сами появляются строками со `Status=Pending`. Менеджер ставит `Variant` (A/B) или пишет свой текст в `Edited text`, в поле **`Channels`** перечисляет, куда постить (метки из подсказки `Channel`, через запятую, или «все»), и меняет `Status` на **Approved** → пост уходит в выбранные каналы/паблики, в `Published link` падают ссылки. Если `Channels` пусто — пост **не публикуется** (авторассылки нет), строка ждёт выбора. `chat_id` не нужен.
 
 **Проверка:** `python -m src.review` + `python -m src.orchestrate` → в таблице появилась строка.
 
@@ -104,7 +106,7 @@
 **Зачем:** масштаб. Конфиги LT/LV/ES/HR/PL уже лежат в `config/geo/`.
 
 1. Для каждой страны заполни в `.env` её данные:
-   - канал: `LV_CHANNEL_ID`, `ES_CHANNEL_ID`, …
+   - канал(ы)/паблик(и): `LV_CHANNEL_ID` (основной) и опц. `LV_PUBLIC_ID` (паблик/группа), и так для каждой. Несколько назначений = блок `telegram.destinations` в `config/geo/<geo>.yaml` (можно дописать ещё строки).
    - оффер: `LV_BRAND` / `LV_AFFILIATE_URL` / `LV_PROMO_CODE`, и так для каждой.
    - (если email) — `LV_MC_LIST_ID` и т.д.
 2. Включи нужные страны одной строкой:
@@ -144,9 +146,9 @@ METRICS_BACKEND=bigquery   METRICS_TABLE=x-fabric-494718-d1.autopost.post_metric
 REVIEW_SURFACE=airtable   AIRTABLE_TOKEN=…   AIRTABLE_BASE_ID=…   AIRTABLE_TABLE=Drafts
 # email
 ESP_BACKEND=mailchimp   MAILCHIMP_API_KEY=…   MAILCHIMP_FROM_NAME=…   MAILCHIMP_REPLY_TO=…
-# каналы и офферы по гео
-LT_CHANNEL_ID=…  LT_BRAND=…  LT_AFFILIATE_URL=…  LT_PROMO_CODE=…  LT_MC_LIST_ID=…
-LV_CHANNEL_ID=…  LV_BRAND=…  …(и так для ES/HR/PL)
+# каналы и офферы по гео (CHANNEL_ID = основной, PUBLIC_ID = паблик/группа, опц.)
+LT_CHANNEL_ID=…  LT_PUBLIC_ID=…  LT_BRAND=…  LT_AFFILIATE_URL=…  LT_PROMO_CODE=…  LT_MC_LIST_ID=…
+LV_CHANNEL_ID=…  LV_PUBLIC_ID=…  LV_BRAND=…  …(и так для ES/HR/PL)
 ```
 
 **Совет:** подключай по одному блоку и сразу проверяй (`orchestrate` + `review`).

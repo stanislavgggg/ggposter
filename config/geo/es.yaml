@@ -16,7 +16,13 @@ local_context:
     - "La Liga fan culture — references to big clubs/players land well."
     - "Strict gambling-ad rules in ES: keep promos compliant, no aggressive bonus pushing."
 telegram:
-  public_channel_id: "${ES_CHANNEL_ID}"
+  # Несколько назначений на гео: канал(ы) + паблик(и). Менеджер сам выбирает, куда постить
+  # (авторассылки нет). Невыставленные ${ENV} автоматически отбрасываются — можно оставить один.
+  destinations:
+    - id: "${ES_CHANNEL_ID}"          # основной канал
+      label: "ES канал"
+    - id: "${ES_PUBLIC_ID}"           # паблик/группа (опц.; не задан -> игнорируется)
+      label: "ES паблик"
   pin_offer: true
 offer:
   brand: "${ES_BRAND}"

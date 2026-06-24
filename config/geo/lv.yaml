@@ -15,7 +15,13 @@ local_context:
   cultural_notes:
     - "Hockey is the emotional core — football posts must earn attention with the story/number."
 telegram:
-  public_channel_id: "${LV_CHANNEL_ID}"
+  # Несколько назначений на гео: канал(ы) + паблик(и). Менеджер сам выбирает, куда постить
+  # (авторассылки нет). Невыставленные ${ENV} автоматически отбрасываются — можно оставить один.
+  destinations:
+    - id: "${LV_CHANNEL_ID}"          # основной канал
+      label: "LV канал"
+    - id: "${LV_PUBLIC_ID}"           # паблик/группа (опц.; не задан -> игнорируется)
+      label: "LV паблик"
   pin_offer: true
 offer:
   brand: "${LV_BRAND}"

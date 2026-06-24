@@ -9,19 +9,20 @@
 """
 import uuid
 
-from .config import load_geo, load_sport
+from .config import load_geo, load_sport, telegram_destinations
 from .store import get_store
 from .claude import generate_post, generate_email
 from . import feedback
 
 
 def _base(geo, ev, kind):
+    dests = telegram_destinations(geo)
     return {
         "draft_id": uuid.uuid4().hex[:12],
         "match_id": ev["match_id"],
         "geo": geo["geo"],
         "kind": kind,
-        "channel_id": geo["telegram"]["public_channel_id"],
+        "channel_id": dests[0]["id"] if dests else "",   # основное назначение (для отображения)
         "status": "pending",
         "notified": False,
     }
