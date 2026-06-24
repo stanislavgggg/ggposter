@@ -122,6 +122,16 @@ def _from_sample(sport_cfg):
     return [ev]
 
 
+def _dataset_id(run):
+    """id датасета из результата .call(). apify-client 3.x -> объект Run
+    (run.default_dataset_id); старые версии -> dict (run['defaultDatasetId'])."""
+    if run is None:
+        raise RuntimeError("Apify actor run is None (актор не запустился или таймаут)")
+    if isinstance(run, dict):
+        return run["defaultDatasetId"]
+    return run.default_dataset_id
+
+
 def _from_apify(sport_cfg):
     from apify_client import ApifyClient  # lazy
     client = ApifyClient(os.environ["APIFY_TOKEN"])
@@ -136,7 +146,7 @@ def _from_apify(sport_cfg):
         for d in dates:
             run_input = _fill_input(src.get("run_input", {}), d) if d else src.get("run_input", {})
             run = client.actor(src["actor_id"]).call(run_input=run_input)
-            for item in client.dataset(run["defaultDatasetId"]).iterate_items():
+            for item in client.dataset(_dataset_id(run)).iterate_items():
                 if parser:
                     ev = parser(item, sport_cfg)     # сам решает finished/нет (None=пропустить)
                     if ev is None or ev["match_id"] in seen:
@@ -271,7 +281,7 @@ def _news_from_apify(news_cfg):
     src = news_cfg["source"]
     run = client.actor(src["actor_id"]).call(run_input=src.get("run_input", {}))
     out, seen = [], set()
-    for item in client.dataset(run["defaultDatasetId"]).iterate_items():
+    for item in client.dataset(_dataset_id(run)).iterate_items():
         ev = _news_normalize(item, news_cfg)
         if ev["match_id"] in seen or not _news_relevant(ev, news_cfg):
             continue
