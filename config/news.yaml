@@ -3,32 +3,33 @@
 #  Система реагирует на новости, не только на завершённые матчи.
 # ============================================================
 
-# Инфоповоды (Слой 1). ВЫКЛЮЧЕНО: GDELT отдаёт несвежие статьи, и формат
-# «мировые новости» в текущих каналах не используется. Включишь, когда дойдёшь
-# до новостного угла (напр. под Catch the Drop). query ниже уже исправлен.
-enabled: false
+enabled: true
 
-# Реальный актор из плана: Reuters/AP/BBC/CNN/Al Jazeera/Bloomberg/GDELT, 65+ языков, без ключей
 source:
+  type: rss                  # rss (надёжно, без токена, с описаниями) | apify (GDELT-актор)
+
+  # RSS уважаемых футбольных изданий. Курируется редакцией -> низкий шум, есть описание.
+  # Можно добавить локальные LT-фиды (15min.lt/sportas, delfi.lt) для местного угла.
+  feeds:
+    - "https://feeds.bbci.co.uk/sport/football/rss.xml"
+    - "https://www.skysports.com/rss/12040"          # Sky Sports — Football
+  max_per_feed: 15
+
+# Фильтр релевантности (подстроки в title/summary). Пусто [] = брать все футбольные новости.
+# Сузь под ЧМ, если канал только про мундиаль: ["World Cup", "Mundial", "Pasaulio taurė"]
+keywords: []
+
+# --- Apify-фолбэк (если source.type: apify) ---
+apify:
   actor_id: "cloud9_ai/gdelt-news-scraper"
   run_input:
-    mode: "search"               # схема актора: mode + query (строка) + maxResults
-    query: "World Cup 2026"       # одна строка; GDELT понимает операторы: "(World Cup OR Mundial)"
+    mode: "search"
+    query: "World Cup 2026"
     maxResults: 50
   field_map:
-    id: "url"                 # url как стабильный id (хешируется)
+    id: "url"
     title: "title"
     summary: "description"
     url: "url"
     source: "domain"
-    league: "query"           # тема/запрос -> наш league/topic
     finished_at: "seendate"
-
-# Альтернатива (GDELT 2.0 DOC API, поиск по терму, каждые 15 мин):
-#   smart_tech_resources/gdelt-news
-
-# Фильтр релевантности (подстроки в title/summary). Пусто = брать всё.
-keywords: ["World Cup", "Pasaulio", "Mundial", "Svjetsko"]
-
-trigger:
-  lookback_hours: 24

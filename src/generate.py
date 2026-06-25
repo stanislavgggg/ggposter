@@ -74,7 +74,7 @@ def generate_for_events(events, geo_name=None):
             d = _telegram_draft(geo, sport, ev, store)
             if d:
                 drafts.append(d)
-        if "email" in outputs:
+        if "email" in outputs and ev.get("type", "result") == "result":
             drafts.extend(_email_drafts(geo, sport, ev, store))
         for d in drafts:
             store.save_draft(d)

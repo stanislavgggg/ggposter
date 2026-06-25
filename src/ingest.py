@@ -504,32 +504,15 @@ def ingest(limit=None):
 
 # ---- НОВОСТИ (инфоповоды, Слой 1) -----------------------------------------
 import hashlib
+import re
+import html as _html
+from email.utils import parsedate_to_datetime
+import xml.etree.ElementTree as ET
 from .config import load_news
 
 
-def _news_normalize(raw, news_cfg):
-    fm = news_cfg["source"].get("field_map", {})
-
-    def f(name):
-        path = fm.get(name)
-        return _get_path(raw, path) if path else raw.get(name)
-
-    url = f("url") or f("id") or ""
-    nid = "news_" + hashlib.sha1(str(url).encode()).hexdigest()[:12]
-    return {
-        "match_id": nid,
-        "type": "news",
-        "sport": os.environ.get("PILOT_SPORT", "football"),
-        "league": f("league"),
-        "status": "news",
-        "title": f("title"),
-        "summary": f("summary"),
-        "url": url,
-        "source": f("source"),
-        "key_stats": {},
-        "raw": raw,
-        "finished_at": _to_iso(f("finished_at")),
-    }
+def _news_id(url):
+    return "news_" + hashlib.sha1(str(url).encode()).hexdigest()[:12]
 
 
 def _news_relevant(ev, news_cfg):
@@ -540,19 +523,114 @@ def _news_relevant(ev, news_cfg):
     return any(k.lower() in text for k in kws)
 
 
+def _news_normalize(raw, fm):
+    """Нормализация по field_map (для apify/sample-источников GDELT-формата)."""
+    def f(name):
+        path = fm.get(name)
+        return _get_path(raw, path) if path else raw.get(name)
+    url = f("url") or f("id") or ""
+    return {
+        "match_id": _news_id(url), "type": "news",
+        "sport": os.environ.get("PILOT_SPORT", "football"),
+        "league": f("league"), "status": "news",
+        "title": f("title"), "summary": f("summary"),
+        "url": url, "source": f("source"),
+        "key_stats": {}, "raw": raw, "finished_at": _to_iso(f("finished_at")),
+    }
+
+
+# --- RSS (надёжно, без токена, с описаниями) ---
+def _strip_html(s):
+    s = re.sub(r"<[^>]+>", " ", s or "")
+    return re.sub(r"\s+", " ", _html.unescape(s)).strip()
+
+
+def _parse_rss(xml_text):
+    """RSS 2.0 и Atom -> [{title, link, summary, pubDate, source}]."""
+    out = []
+    root = ET.fromstring(xml_text)
+    channel = root.find("channel")
+    if channel is not None:                                  # RSS 2.0
+        domain = _strip_html(channel.findtext("title") or "")
+        for it in channel.findall("item"):
+            out.append({
+                "title": _strip_html(it.findtext("title") or ""),
+                "link": (it.findtext("link") or "").strip(),
+                "summary": _strip_html(it.findtext("description") or "")[:500],
+                "pubDate": it.findtext("pubDate"),
+                "source": domain,
+            })
+    else:                                                    # Atom
+        ns = {"a": "http://www.w3.org/2005/Atom"}
+        for e in root.findall("a:entry", ns):
+            link_el = e.find("a:link", ns)
+            out.append({
+                "title": _strip_html(e.findtext("a:title", default="", namespaces=ns)),
+                "link": (link_el.get("href") if link_el is not None else "") or "",
+                "summary": _strip_html(e.findtext("a:summary", default="", namespaces=ns)
+                                       or e.findtext("a:content", default="", namespaces=ns))[:500],
+                "pubDate": e.findtext("a:updated", default="", namespaces=ns),
+                "source": "",
+            })
+    return out
+
+
+def _rss_event(it):
+    fin = None
+    if it.get("pubDate"):
+        try:
+            fin = parsedate_to_datetime(it["pubDate"]).astimezone(timezone.utc).isoformat()
+        except Exception:
+            fin = None
+    return {
+        "match_id": _news_id(it["link"]), "type": "news",
+        "sport": os.environ.get("PILOT_SPORT", "football"),
+        "league": None, "status": "news",
+        "title": it.get("title"), "summary": it.get("summary"),
+        "url": it.get("link"), "source": it.get("source"),
+        "key_stats": {}, "raw": it, "finished_at": fin,
+    }
+
+
+def _news_from_rss(news_cfg):
+    import requests
+    src = news_cfg.get("source", {})
+    feeds = src.get("feeds", [])
+    maxf = int(src.get("max_per_feed", 15))
+    out, seen = [], set()
+    for url in feeds:
+        try:
+            r = requests.get(url, timeout=20, headers={"User-Agent": "ggposter/1.0"})
+            r.raise_for_status()
+            items = _parse_rss(r.text)[:maxf]
+        except Exception as e:
+            print(f"[news] rss {url} error: {e}")
+            continue
+        for it in items:
+            if not it.get("title") or not it.get("link"):
+                continue
+            ev = _rss_event(it)
+            if ev["match_id"] in seen or not _news_relevant(ev, news_cfg):
+                continue
+            seen.add(ev["match_id"])
+            out.append(ev)
+    return out
+
+
 def _news_from_sample(news_cfg):
+    fm = news_cfg.get("apify", {}).get("field_map", {})
     with open(os.path.join(ROOT, "data", "sample_news.json"), "r", encoding="utf-8") as f:
-        return [_news_normalize(json.load(f), news_cfg)]
+        return [_news_normalize(json.load(f), fm)]
 
 
 def _news_from_apify(news_cfg):
     from apify_client import ApifyClient
+    ap = news_cfg.get("apify", {})
     client = ApifyClient(os.environ["APIFY_TOKEN"])
-    src = news_cfg["source"]
-    run = client.actor(src["actor_id"]).call(run_input=src.get("run_input", {}))
+    run = client.actor(ap["actor_id"]).call(run_input=ap.get("run_input", {}))
     out, seen = [], set()
     for item in client.dataset(_dataset_id(run)).iterate_items():
-        ev = _news_normalize(item, news_cfg)
+        ev = _news_normalize(item, ap.get("field_map", {}))
         if ev["match_id"] in seen or not _news_relevant(ev, news_cfg):
             continue
         seen.add(ev["match_id"])
@@ -561,15 +639,22 @@ def _news_from_apify(news_cfg):
 
 
 def ingest_news():
-    """Забрать инфоповоды. Возвращает список news-событий (или [] если выключено)."""
+    """Забрать инфоповоды. RSS по умолчанию (без токена). SOURCE=sample -> фикстура."""
     news_cfg = load_news()
     if not news_cfg.get("enabled"):
         return []
-    source = os.environ.get("SOURCE", "sample")
-    events = _news_from_sample(news_cfg) if source == "sample" else _news_from_apify(news_cfg)
+    stype = (news_cfg.get("source", {}) or {}).get("type", "rss")
+    source_env = os.environ.get("SOURCE", "sample")
+    if source_env == "sample":
+        events = _news_from_sample(news_cfg)
+    elif stype == "apify":
+        events = _news_from_apify(news_cfg)
+    else:
+        events = _news_from_rss(news_cfg)
     store = get_store()
     for ev in events:
         store.upsert_event(ev)
+    print(f"[news] источник={'sample' if source_env=='sample' else stype} новостей={len(events)}")
     return events
 
 

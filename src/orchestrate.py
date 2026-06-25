@@ -46,15 +46,19 @@ def _select_new(events, store, limit):
 
 def run_once():
     store = get_store()
-    limit = _events_per_run()
-    matches = ingest(limit=limit)         # two_pass материализует только нужные новые матчи
+    limit_m = _events_per_run()                       # сколько новых МАТЧЕЙ за прогон
+    limit_n = int(os.environ.get("NEWS_PER_RUN", "1"))  # сколько новых НОВОСТЕЙ за прогон
+    matches = ingest(limit=limit_m)
     news = ingest_news()
-    enrich(matches)                       # опционально (ENRICH=true)
+    enrich(matches)                                   # опционально (ENRICH=true)
 
-    all_events = matches + news
-    events = _select_new(all_events, store, limit)
-    print(f"[orchestrate] получено={len(all_events)} новых_к_обработке={len(events)} "
-          f"(EVENTS_PER_RUN={limit or '∞'})")
+    # Отбираем по каждому типу отдельно -> новости не вытесняют матчи и наоборот.
+    sel_matches = _select_new(matches, store, limit_m)
+    sel_news = _select_new(news, store, limit_n)
+    events = sel_matches + sel_news
+    print(f"[orchestrate] матчи: {len(matches)}->{len(sel_matches)} | "
+          f"новости: {len(news)}->{len(sel_news)} | к обработке={len(events)} "
+          f"(EVENTS_PER_RUN={limit_m or '∞'}, NEWS_PER_RUN={limit_n or '∞'})")
 
     total = 0
     for geo in _geos():
