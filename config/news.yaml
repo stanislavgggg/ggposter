@@ -8,16 +8,31 @@ enabled: true
 source:
   type: rss                  # rss (надёжно, без токена, с описаниями) | apify (GDELT-актор)
 
-  # RSS уважаемых футбольных изданий. Курируется редакцией -> низкий шум, есть описание.
-  # Можно добавить локальные LT-фиды (15min.lt/sportas, delfi.lt) для местного угла.
+  # RSS строго футбольных разделов (низкий шанс кросс-постов из других видов спорта).
   feeds:
     - "https://feeds.bbci.co.uk/sport/football/rss.xml"
-    - "https://www.skysports.com/rss/12040"          # Sky Sports — Football
+    - "https://www.theguardian.com/football/rss"
   max_per_feed: 15
 
 # Фильтр релевантности (подстроки в title/summary). Пусто [] = брать все футбольные новости.
-# Сузь под ЧМ, если канал только про мундиаль: ["World Cup", "Mundial", "Pasaulio taurė"]
 keywords: []
+
+# Отсев чужих видов спорта (если фид иногда кросс-постит). Совпадение -> новость выбрасывается.
+exclude_keywords:
+  - "cricket"
+  - "Test match"
+  - "wicket"
+  - "Bazball"
+  - "Bazeball"
+  - "rugby"
+  - "tennis"
+  - "NBA"
+  - "golf"
+  - "Formula 1"
+  - "boxing"
+  - "UFC"
+  - "NFL"
+  - "baseball"
 
 # --- Apify-фолбэк (если source.type: apify) ---
 apify:

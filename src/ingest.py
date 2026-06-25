@@ -516,10 +516,13 @@ def _news_id(url):
 
 
 def _news_relevant(ev, news_cfg):
+    text = f"{ev.get('title','')} {ev.get('summary','')}".lower()
+    excl = news_cfg.get("exclude_keywords", [])
+    if any(k.lower() in text for k in excl):     # чужой вид спорта -> выбрасываем
+        return False
     kws = news_cfg.get("keywords", [])
     if not kws:
         return True
-    text = f"{ev.get('title','')} {ev.get('summary','')}".lower()
     return any(k.lower() in text for k in kws)
 
 
